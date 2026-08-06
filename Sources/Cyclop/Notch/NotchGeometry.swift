@@ -11,8 +11,40 @@ struct NotchGeometry {
     /// True when the display actually has a notch cut into it.
     let isPhysical: Bool
 
+    /// Metrics of the tab rail, kept here rather than with the view because the
+    /// body's height is measured from them: the rail is the tallest thing in the
+    /// panel and the only thing in it that cannot give way.
+    static let railIconHeight: CGFloat = 24
+    static let railSpacing: CGFloat = 4
+    /// Gap between the rail and the bottom edge of the body.
+    static let bodyBottomPadding: CGFloat = 14
+
+    /// Height the body owes whatever stands in it.
+    ///
+    /// Read from the rail that is actually there, not written down: a rail that
+    /// grows an icon takes the body with it, instead of quietly outgrowing it
+    /// the way six icons already have.
+    static var contentHeight: CGFloat {
+        let icons = CGFloat(NotchViewModel.Tab.leftRail.count)
+        return icons * railIconHeight + (icons - 1) * railSpacing + bodyBottomPadding
+    }
+
     /// Size of the fully expanded panel body.
-    let expandedSize = CGSize(width: 620, height: 208)
+    ///
+    /// The height follows the header instead of standing still. Holding the
+    /// outside constant at 208 is what left the rail short: the header is the
+    /// notch's own height, and a real notch is taller than a menu bar — 38
+    /// against 30 on a 13" M1 — so on a Mac with a cutout those points came out
+    /// of the content. The rail asks for 164 and was handed 156, which put its
+    /// bottom icon 8 pt into the padding beneath it (#26).
+    ///
+    /// So the constant is the inside now. Every Mac gets the same body, and the
+    /// panel differs on the outside by exactly the notch it hangs from — which
+    /// is the one thing that genuinely differs between them.
+    var expandedSize: CGSize {
+        CGSize(width: 620, height: notchSize.height + Self.contentHeight)
+    }
+
     /// Slack around the panel so the concave shoulders and shadow are not clipped.
     let windowPadding = NSEdgeInsets(top: 0, left: 40, bottom: 44, right: 40)
 

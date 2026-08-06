@@ -36,9 +36,11 @@ final class NotchViewModel: ObservableObject {
         var needsKeyboard: Bool { self == .translate || self == .snippets || self == .notes }
 
         /// Which rail the icon sits on. The left one carries the original six
-        /// and is full — a seventh icon would outgrow the height the panel
-        /// body has — so growth continues in a second column on the right,
-        /// which the scratch notes open.
+        /// and is full — the body is measured from this list now (#26), so a
+        /// seventh icon no longer overflows the panel, it makes the panel
+        /// taller, which is the same objection worded politely. Growth
+        /// continues in a second column on the right, which the scratch notes
+        /// open.
         static let leftRail: [Tab] = [.media, .shelf, .clipboard, .snippets, .calendar, .translate]
         static let rightRail: [Tab] = [.notes]
     }

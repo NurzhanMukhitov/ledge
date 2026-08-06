@@ -117,7 +117,9 @@ struct NotchContentView: View {
             Rail(vm: vm, tabs: NotchViewModel.Tab.rightRail)
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 14)
+        // The body's height is measured from this same number, so the two
+        // cannot drift apart into a rail that does not fit.
+        .padding(.bottom, NotchGeometry.bodyBottomPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -196,14 +198,14 @@ private struct Rail: View {
     private let dwell = Duration.milliseconds(150)
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: NotchGeometry.railSpacing) {
             ForEach(tabs) { tab in
                 Button {
                     vm.select(tab)
                 } label: {
                     Image(systemName: tab.symbol)
                         .font(.system(size: 12, weight: .medium))
-                        .frame(width: 30, height: 24)
+                        .frame(width: 30, height: NotchGeometry.railIconHeight)
                         .background(
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 .fill(fill(for: tab))
