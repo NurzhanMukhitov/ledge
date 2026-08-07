@@ -10,19 +10,98 @@ struct CalendarPane: View {
     /// on its own, and the countdown in the panel's header shows one anyway.
     private var hidden: Bool { privacy.hides(.calendar, "calendar") }
 
+    /// Which calendars feed the panel, apart from which ones Calendar.app
+    /// shows (#36). A button rather than a menu: toggling several calendars
+    /// in a row through a menu means reopening it after every click, since a
+    /// menu closes on the click that answers it — a view in the tab itself
+    /// does not have that problem.
+    @State private var showingCalendars = false
+
     var body: some View {
-        switch calendar.access {
-        case .notRequested:
-            permissionPrompt
-        case .denied:
-            deniedState
-        case .granted:
-            if let next = calendar.next {
-                agenda(next: next)
-            } else {
-                emptyState
+        ZStack(alignment: .topTrailing) {
+            Group {
+                switch calendar.access {
+                case .notRequested:
+                    permissionPrompt
+                case .denied:
+                    deniedState
+                case .granted:
+                    if showingCalendars {
+                        calendarsList
+                    } else if let next = calendar.next {
+                        agenda(next: next)
+                    } else {
+                        emptyState
+                    }
+                }
+            }
+            if calendar.access == .granted {
+                calendarsToggle
             }
         }
+    }
+
+    /// A gear while browsing the agenda; a filled "Done" pill while the list
+    /// is open, so leaving it reads as finishing a choice rather than as
+    /// dismissing a popup — even though every tap already applied on its own.
+    private var calendarsToggle: some View {
+        Button {
+            showingCalendars.toggle()
+        } label: {
+            if showingCalendars {
+                Text(localized("Done"))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Theme.surfaceHover))
+            } else {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.tertiary)
+                    .frame(width: 22, height: 22)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(localized(showingCalendars ? "Done" : "Calendars"))
+    }
+
+    /// A checkbox per calendar EventKit knows about, defaulting to whatever
+    /// Calendar.app currently shows — a pick made here overrides that
+    /// permanently, in either direction, and holds regardless of what the
+    /// checkbox in Calendar.app does afterwards. Each tap reloads the agenda
+    /// at once, there is nothing here to save.
+    private var calendarsList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(localized("Calendars"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.secondary)
+                .padding(.trailing, 60)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(calendar.calendarOptions) { option in
+                        Button {
+                            calendar.setCalendarShown(!option.isShown, identifier: option.id)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: option.isShown ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(option.isShown ? .white : Theme.tertiary)
+                                Text(option.title)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.secondary)
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.trailing, 60)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .padding(.top, 4)
     }
 
     // MARK: - Agenda
@@ -119,6 +198,9 @@ struct CalendarPane: View {
             Spacer(minLength: 0)
         }
         .frame(width: 230, alignment: .leading)
+        // Clears the gear button sitting at the pane's own top-trailing
+        // corner (#36) — without this, its first row ran straight under it.
+        .padding(.trailing, 26)
     }
 
     /// An icon rather than the label the main button spells out: the row has
