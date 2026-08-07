@@ -11,38 +11,34 @@ struct NotchGeometry {
     /// True when the display actually has a notch cut into it.
     let isPhysical: Bool
 
-    /// Metrics of the tab rail, kept here rather than with the view because the
-    /// body's height is measured from them: the rail is the tallest thing in the
-    /// panel and the only thing in it that cannot give way.
-    static let railIconHeight: CGFloat = 24
+    /// Metrics of the tab rail that do not depend on the notch. `railIconHeight`
+    /// is not among them — see below.
     static let railSpacing: CGFloat = 4
     /// Gap between the rail and the bottom edge of the body.
     static let bodyBottomPadding: CGFloat = 14
 
-    /// Height the body owes whatever stands in it.
-    ///
-    /// Read from the rail that is actually there, not written down: a rail that
-    /// grows an icon takes the body with it, instead of quietly outgrowing it
-    /// the way six icons already have.
-    static var contentHeight: CGFloat {
-        let icons = CGFloat(NotchViewModel.Tab.leftRail.count)
-        return icons * railIconHeight + (icons - 1) * railSpacing + bodyBottomPadding
-    }
+    /// Size of the fully expanded panel body. Held constant across every Mac:
+    /// letting it follow the header made two people on the very same model
+    /// see two different heights, just from different display-scaling
+    /// settings — 38 pt against 32 for the same physical notch, an 11 pt
+    /// spread from one slider (#27). What differs between Macs lives in
+    /// `railIconHeight` instead, which is the one thing in the body actually
+    /// free to give.
+    let expandedSize = CGSize(width: 620, height: 208)
 
-    /// Size of the fully expanded panel body.
-    ///
-    /// The height follows the header instead of standing still. Holding the
-    /// outside constant at 208 is what left the rail short: the header is the
-    /// notch's own height, and a real notch is taller than a menu bar — 38
-    /// against 30 on a 13" M1 — so on a Mac with a cutout those points came out
-    /// of the content. The rail asks for 164 and was handed 156, which put its
-    /// bottom icon 8 pt into the padding beneath it (#26).
-    ///
-    /// So the constant is the inside now. Every Mac gets the same body, and the
-    /// panel differs on the outside by exactly the notch it hangs from — which
-    /// is the one thing that genuinely differs between them.
-    var expandedSize: CGSize {
-        CGSize(width: 620, height: notchSize.height + Self.contentHeight)
+    /// Height each rail icon gets. A ceiling, not a constant: six icons at
+    /// the full 24 pt plus the five 4 pt gaps between them is 164 pt, and
+    /// the body only has `expandedSize.height − notchSize.height −
+    /// bodyBottomPadding` left to give the rail once the header — the notch
+    /// itself — and the padding beneath are taken out of the fixed 208.
+    /// Rounded down rather than to the nearest point: a rail that asks for
+    /// more than it is given should visibly yield, not overflow by a
+    /// fraction that clips it.
+    var railIconHeight: CGFloat {
+        let icons = CGFloat(NotchViewModel.Tab.leftRail.count)
+        let available = expandedSize.height - notchSize.height - Self.bodyBottomPadding
+        let ceiling = (available - (icons - 1) * Self.railSpacing) / icons
+        return min(24, ceiling).rounded(.down)
     }
 
     /// Slack around the panel so the concave shoulders and shadow are not clipped.

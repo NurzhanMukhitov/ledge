@@ -205,7 +205,7 @@ private struct Rail: View {
                 } label: {
                     Image(systemName: tab.symbol)
                         .font(.system(size: 12, weight: .medium))
-                        .frame(width: 30, height: NotchGeometry.railIconHeight)
+                        .frame(width: 30, height: vm.geometry.railIconHeight)
                         .background(
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 .fill(fill(for: tab))
