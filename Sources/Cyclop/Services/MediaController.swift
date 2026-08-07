@@ -74,7 +74,9 @@ final class MediaController: ObservableObject {
         // Optimistic flip so the button feels instant; the feed corrects it.
         isPlaying.toggle()
         setAnchor(position)
-        dispatch(feed: .togglePlayPause, script: { PlayerBridge.playPause($0) }, key: .playPause)
+        // The per-client command set has no toggle of its own (#23) — Play
+        // and Pause are sent explicitly, by the state just flipped to above.
+        dispatch(feed: isPlaying ? .play : .pause, script: { PlayerBridge.playPause($0) }, key: .playPause)
     }
 
     func next() {

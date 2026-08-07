@@ -23,8 +23,13 @@ final class NowPlayingFeed {
         var isEmpty: Bool { title.isEmpty }
     }
 
+    /// Codes the per-client MediaRemote API actually answers to — read off a
+    /// live session's `GetSupportedCommandsForPlayer`, not assumed from the
+    /// old global enum. There is no separate toggle among them: play and
+    /// pause are sent explicitly, by whichever state the caller already
+    /// knows it is in.
     enum Command: Int {
-        case play = 0, pause = 1, togglePlayPause = 2, next = 4, previous = 5
+        case play = 0, pause = 1, next = 4, previous = 5
     }
 
     var onUpdate: ((Snapshot) -> Void)?

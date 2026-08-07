@@ -20,21 +20,35 @@
 typedef void (*MRGetInfoFn)(dispatch_queue_t, void (^)(CFDictionaryRef));
 typedef void (*MRGetBoolFn)(dispatch_queue_t, void (^)(Boolean));
 typedef void (*MRRegisterFn)(dispatch_queue_t);
-typedef Boolean (*MRSendCommandFn)(int, CFDictionaryRef);
-typedef void (*MRSetElapsedFn)(double);
 typedef void (*MRGetPIDFn)(dispatch_queue_t, void (^)(int));
+typedef void (*MRGetClientsFn)(dispatch_queue_t, void (^)(NSArray *));
+typedef void (*MRSendCommandToPlayerFn)(int, CFDictionaryRef, id, id, id, void (^)(id));
 
 static MRGetInfoFn sGetInfo;
 static MRGetBoolFn sGetIsPlaying;
-static MRSendCommandFn sSendCommand;
-static MRSetElapsedFn sSetElapsed;
 static MRGetPIDFn sGetPID;
+static MRGetClientsFn sGetClients;
+static MRSendCommandToPlayerFn sSendCommandToPlayer;
 static int sOwnerPID;
 static dispatch_queue_t sQueue;
 static NSString *sArtworkID;
 
 static NSString *const kMediaRemotePath =
     @"/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote";
+
+/// Codes read live off a real session's `GetSupportedCommandsForPlayer` —
+/// not the old `MRMediaRemoteCommand` enum, which is not always the same
+/// numbering. Play/Pause/NextTrack/PreviousTrack happened to match it
+/// (0/1/4/5); SeekToPlaybackPosition did not (24, not the 11 the old enum
+/// would suggest). There is no separate toggle code in the per-client set —
+/// the caller sends Play or Pause explicitly, by its own known state.
+typedef NS_ENUM(int, MRCommand) {
+    MRCommandPlay = 0,
+    MRCommandPause = 1,
+    MRCommandNextTrack = 4,
+    MRCommandPreviousTrack = 5,
+    MRCommandSeekToPlaybackPosition = 24,
+};
 
 static void emit(NSDictionary *payload) {
     NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:NULL];
@@ -88,14 +102,35 @@ static void publish(void) {
     });
 }
 
+/// The service already tracks which player is "active" for the whole
+/// system — asking it directly gives an already-resolved, already-matched
+/// path. Building one by hand from a bundle id resolves too, but the
+/// per-client API then reports it supports nothing and silently drops every
+/// command sent to it; this is the only form that has ever worked.
+/// `activePlayerPath` also answers nil until `MRMediaRemoteGetNowPlayingClients`
+/// has been called at least once in this process — `startFeed` does that once,
+/// at launch.
+static id activePlayerPath(void) {
+    id serviceClient = [NSClassFromString(@"MRMediaRemoteServiceClient") performSelector:@selector(sharedServiceClient)];
+    return [serviceClient performSelector:@selector(activePlayerPath)];
+}
+
+static void sendCommandToActivePlayer(MRCommand command, NSDictionary *options) {
+    if (!sSendCommandToPlayer) return;
+    id path = activePlayerPath();
+    if (!path) return;
+    sSendCommandToPlayer(command, (__bridge CFDictionaryRef)options, nil, path, nil, ^(id result){});
+}
+
 static void handleCommand(NSString *line) {
     if ([line isEqualToString:@"get"]) {
         publish();
     } else if ([line hasPrefix:@"cmd "]) {
-        if (sSendCommand) sSendCommand([line substringFromIndex:4].intValue, NULL);
+        sendCommandToActivePlayer((MRCommand)[line substringFromIndex:4].intValue, nil);
         publish();
     } else if ([line hasPrefix:@"seek "]) {
-        if (sSetElapsed) sSetElapsed([line substringFromIndex:5].doubleValue);
+        double seconds = [line substringFromIndex:5].doubleValue;
+        sendCommandToActivePlayer(MRCommandSeekToPlaybackPosition, @{@"kMRMediaRemoteOptionPlaybackPosition": @(seconds)});
         publish();
     }
 }
@@ -111,13 +146,18 @@ static void startFeed(void) {
         }
         sGetInfo = (MRGetInfoFn)dlsym(handle, "MRMediaRemoteGetNowPlayingInfo");
         sGetIsPlaying = (MRGetBoolFn)dlsym(handle, "MRMediaRemoteGetNowPlayingApplicationIsPlaying");
-        sSendCommand = (MRSendCommandFn)dlsym(handle, "MRMediaRemoteSendCommand");
-        sSetElapsed = (MRSetElapsedFn)dlsym(handle, "MRMediaRemoteSetElapsedTime");
         sGetPID = (MRGetPIDFn)dlsym(handle, "MRMediaRemoteGetNowPlayingApplicationPID");
+        sGetClients = (MRGetClientsFn)dlsym(handle, "MRMediaRemoteGetNowPlayingClients");
+        sSendCommandToPlayer = (MRSendCommandToPlayerFn)dlsym(handle, "MRMediaRemoteSendCommandToPlayer");
 
         MRRegisterFn registerNotifications =
             (MRRegisterFn)dlsym(handle, "MRMediaRemoteRegisterForNowPlayingNotifications");
         if (registerNotifications) registerNotifications(sQueue);
+
+        // activePlayerPath answers nil until the per-client subscription has
+        // been primed at least once in this process — call order matters,
+        // not just symbol presence.
+        if (sGetClients) sGetClients(sQueue, ^(NSArray *clients) {});
 
         NSArray *names = @[
             @"kMRMediaRemoteNowPlayingInfoDidChangeNotification",
@@ -132,6 +172,16 @@ static void startFeed(void) {
                 publish();
             }];
         }
+
+        // A poll, not just a subscription: on macOS 26 the notifications above
+        // were measured arriving zero times across 30-second windows that
+        // included real track changes (#23), so a client that only reacted to
+        // them would go stale silently. Cheap enough at this interval to run
+        // unconditionally rather than gate it on whether anything is playing —
+        // an idle session publishes the same empty record it already would.
+        [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *timer) {
+            publish();
+        }];
 
         publish();
         [NSRunLoop.currentRunLoop addPort:[NSMachPort port] forMode:NSDefaultRunLoopMode];
