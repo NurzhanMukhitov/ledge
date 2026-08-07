@@ -173,8 +173,7 @@ final class NotchViewModel: ObservableObject {
         clipboard.wantsImages = { Self.saveClipboardImagesEnabled }
         clipboard.onImage = { [weak self] png in
             guard let self, let url = ScreenshotVault.save(png) else { return }
-            self.shelf.add([url])
-            self.tab = .shelf
+            self.receivedScreenshot(at: url)
         }
         clipboard.start()
     }
@@ -187,6 +186,22 @@ final class NotchViewModel: ObservableObject {
         notes.flush()
     }
 
+    /// A screenshot that arrived on its own — copied elsewhere, or synced
+    /// from a phone by Continuity — rather than one the user handed to the
+    /// panel directly. It goes on the shelf either way, but only switches to
+    /// showing it when nobody is mid-sentence: the tab's own field would
+    /// slide out from under the caret, and losing the keyboard mid-word sends
+    /// the rest of the sentence to whatever is underneath. The shelf's
+    /// counter already shows the new picture, so nothing about it is lost by
+    /// waiting.
+    func receivedScreenshot(at url: URL) {
+        shelf.add([url])
+        guard !wantsKeyboard else { return }
+        tab = .shelf
+    }
+
+    /// A file the user dropped on the panel by hand — switching to the shelf
+    /// is the point, not a side effect to guard against.
     func accept(urls: [URL]) -> Bool {
         shelf.add(urls)
         tab = .shelf
