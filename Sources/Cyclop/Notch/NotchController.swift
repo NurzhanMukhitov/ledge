@@ -54,12 +54,6 @@ final class NotchController {
         }
     }
 
-    /// The screenshots folder can be emptied from the menu bar; the shelf has
-    /// to notice its files are gone without waiting for a relaunch.
-    func reloadShelf() {
-        viewModel?.shelf.load()
-    }
-
     /// The panel belongs to the desktop it was opened on. ⌘-Tab to another one
     /// leaves the pointer wherever it happened to be — which is not a decision
     /// to keep the panel expanded over a screen the user has just arrived at.

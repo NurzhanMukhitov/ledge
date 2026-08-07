@@ -8,16 +8,21 @@
 "Snippets" = "Заготовки";
 "Calendar" = "Календарь";
 "Translate" = "Перевод";
+"Settings" = "Настройки";
 
 /* Меню-бар */
 "Open Panel" = "Открыть панель";
+"Quit" = "Выйти";
+
+/* Вкладка настроек */
+"General" = "Общее";
 "Launch at Login" = "Запускать при входе";
+"Screenshots" = "Скриншоты";
 "Save Clipboard Screenshots" = "Сохранять скриншоты из буфера";
 "Show Screenshots Folder" = "Показать папку скриншотов";
 "Clear Screenshots Folder" = "Очистить папку снимков";
 "Clear Screenshots Folder (%@)" = "Очистить папку снимков (%@)";
 "Show Snippets File" = "Показать файл заготовок";
-"Quit" = "Выйти";
 
 /* Полка */
 "Selected: %d" = "Выбрано: %d";

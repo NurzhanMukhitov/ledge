@@ -1,16 +1,12 @@
 import AppKit
-import ServiceManagement
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var controller: NotchController?
     private var statusItem: NSStatusItem?
-    private var clearVaultItem: NSMenuItem?
     private var privacyItem: NSMenuItem?
     private var privacyAllItem: NSMenuItem?
     private var privacySectionItems: [PrivacyMode.Section: NSMenuItem] = [:]
-    private var loginItem: NSMenuItem?
-    private var saveShotsItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = NotchController()
@@ -33,9 +29,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.image?.isTemplate = true
 
         let menu = NSMenu()
-        // Enabling is decided here, not guessed from the responder chain: the
-        // clear item below is disabled exactly when the folder is empty.
-        menu.autoenablesItems = false
         menu.delegate = self
         menu.addItem(withTitle: "Cyclop \(Bundle.main.shortVersion)", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
@@ -48,17 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle.target = self
         menu.addItem(toggle)
 
-        let login = NSMenuItem(
-            title: localized("Launch at Login"),
-            action: #selector(toggleLaunchAtLogin),
-            keyEquivalent: ""
-        )
-        login.target = self
-        login.state = launchAtLoginEnabled ? .on : .off
-        menu.addItem(login)
-        loginItem = login
-
-        // Sits next to the panel switch rather than among the folder items: it
+        // Sits next to the panel switch rather than in the Settings tab: it
         // changes what the panel shows, and it is the one people look for in a
         // hurry, with the camera already running.
         //
@@ -92,45 +75,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(privacy)
         privacyItem = privacy
 
-        let saveShots = NSMenuItem(
-            title: localized("Save Clipboard Screenshots"),
-            action: #selector(toggleSaveClipboardImages),
-            keyEquivalent: ""
-        )
-        saveShots.target = self
-        saveShots.state = NotchViewModel.saveClipboardImagesEnabled ? .on : .off
-        menu.addItem(saveShots)
-        saveShotsItem = saveShots
-
-        let openFolder = NSMenuItem(
-            title: localized("Show Screenshots Folder"),
-            action: #selector(revealScreenshots),
-            keyEquivalent: ""
-        )
-        openFolder.target = self
-        menu.addItem(openFolder)
-
-        // Screenshots accumulate forever by design — nothing in that folder is
-        // deleted behind the user's back. This is the other half of that deal:
-        // one visible, hand-operated way out, with the current size right in
-        // the title so the offer names its price.
-        let clearVault = NSMenuItem(
-            title: localized("Clear Screenshots Folder"),
-            action: #selector(clearScreenshots),
-            keyEquivalent: ""
-        )
-        clearVault.target = self
-        menu.addItem(clearVault)
-        clearVaultItem = clearVault
-
-        let openSnippets = NSMenuItem(
-            title: localized("Show Snippets File"),
-            action: #selector(revealSnippets),
-            keyEquivalent: ""
-        )
-        openSnippets.target = self
-        menu.addItem(openSnippets)
-
         menu.addItem(.separator())
         let quit = NSMenuItem(title: localized("Quit"), action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -145,40 +89,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Everything shown is re-read when the menu opens, not kept fresh in
-    /// between: a menu nobody is looking at deserves no bookkeeping — and a
-    /// state set once at launch quietly goes stale. Launch-at-login is the
-    /// live case: System Settings can switch it off from outside, and the
-    /// checkmark here used to keep claiming otherwise until relaunch (#11).
+    /// between: a menu nobody is looking at deserves no bookkeeping.
     func menuWillOpen(_ menu: NSMenu) {
         refreshPrivacyItems()
-        loginItem?.state = launchAtLoginEnabled ? .on : .off
-        saveShotsItem?.state = NotchViewModel.saveClipboardImagesEnabled ? .on : .off
-
-        guard let clearVaultItem else { return }
-        // Off the main thread: walking the folder takes as long as the folder
-        // is big, and this is the thread the whole panel lives on (#11). The
-        // menu is already open when the answer lands; the title updates in
-        // place.
-        DispatchQueue.global(qos: .userInitiated).async { [weak clearVaultItem] in
-            let usage = ScreenshotVault.usage()
-            let size = ByteCountFormatter.string(fromByteCount: usage.bytes, countStyle: .file)
-            DispatchQueue.main.async {
-                guard let clearVaultItem else { return }
-                if usage.files == 0 {
-                    clearVaultItem.title = localized("Clear Screenshots Folder")
-                    clearVaultItem.isEnabled = false
-                } else {
-                    clearVaultItem.title = localized("Clear Screenshots Folder (%@)", size)
-                    clearVaultItem.isEnabled = true
-                }
-            }
-        }
-    }
-
-    @objc private func clearScreenshots() {
-        ScreenshotVault.clear()
-        // The cards pointing into that folder just went to the Trash with it.
-        controller?.reloadShelf()
     }
 
     @objc private func quit() {
@@ -212,39 +125,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for (section, item) in privacySectionItems {
             item.state = privacy.covers(section) ? .on : .off
         }
-    }
-
-    @objc private func toggleSaveClipboardImages(_ sender: NSMenuItem) {
-        UserDefaults.standard.set(
-            !NotchViewModel.saveClipboardImagesEnabled,
-            forKey: NotchViewModel.saveClipboardImagesKey
-        )
-        sender.state = NotchViewModel.saveClipboardImagesEnabled ? .on : .off
-    }
-
-    @objc private func revealScreenshots() {
-        ScreenshotVault.reveal()
-    }
-
-    @objc private func revealSnippets() {
-        SnippetStore.reveal()
-    }
-
-    private var launchAtLoginEnabled: Bool {
-        SMAppService.mainApp.status == .enabled
-    }
-
-    @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
-        do {
-            if launchAtLoginEnabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            NSLog("Cyclop: launch-at-login failed: \(error.localizedDescription)")
-        }
-        sender.state = launchAtLoginEnabled ? .on : .off
     }
 }
 
