@@ -158,7 +158,14 @@ final class SnippetStore: ObservableObject {
         pasteboard.setString(snippet.text, forType: .string)
     }
 
+    /// Selecting a file that is not on disk yet is a silent no-op for Finder —
+    /// nothing opens, nothing errors. Before the first snippet is added there
+    /// is nothing to select, so an empty list is written first: the same
+    /// state `reload()` already treats as a valid, empty file.
     static func reveal() {
+        if !FileManager.default.fileExists(atPath: file.path) {
+            try? Data("[]".utf8).write(to: file)
+        }
         NSWorkspace.shared.activateFileViewerSelecting([file])
     }
 }

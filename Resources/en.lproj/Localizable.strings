@@ -9,16 +9,21 @@
 "Snippets" = "Snippets";
 "Calendar" = "Calendar";
 "Translate" = "Translate";
+"Settings" = "Settings";
 
 /* Menu bar */
 "Open Panel" = "Open Panel";
+"Quit" = "Quit";
+
+/* Settings tab */
+"General" = "General";
 "Launch at Login" = "Launch at Login";
+"Screenshots" = "Screenshots";
 "Save Clipboard Screenshots" = "Save Clipboard Screenshots";
 "Show Screenshots Folder" = "Show Screenshots Folder";
 "Clear Screenshots Folder" = "Clear Screenshots Folder";
 "Clear Screenshots Folder (%@)" = "Clear Screenshots Folder (%@)";
 "Show Snippets File" = "Show Snippets File";
-"Quit" = "Quit";
 
 /* Shelf */
 "Selected: %d" = "Selected: %d";

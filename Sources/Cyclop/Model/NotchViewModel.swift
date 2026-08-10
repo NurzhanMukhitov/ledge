@@ -4,7 +4,7 @@ import Combine
 @MainActor
 final class NotchViewModel: ObservableObject {
     enum Tab: String, CaseIterable, Identifiable {
-        case media, shelf, clipboard, snippets, calendar, translate, notes
+        case media, shelf, clipboard, snippets, calendar, translate, notes, settings
         var id: String { rawValue }
 
         var symbol: String {
@@ -16,6 +16,7 @@ final class NotchViewModel: ObservableObject {
             case .calendar: return "calendar"
             case .translate: return "translate"
             case .notes: return "note.text"
+            case .settings: return "gearshape.fill"
             }
         }
 
@@ -28,6 +29,7 @@ final class NotchViewModel: ObservableObject {
             case .calendar: return localized("Calendar")
             case .translate: return localized("Translate")
             case .notes: return localized("Notes")
+            case .settings: return localized("Settings")
             }
         }
 
@@ -40,9 +42,12 @@ final class NotchViewModel: ObservableObject {
         /// #27), so a seventh icon would not overflow the panel, but it would
         /// shrink every icon on the rail to make room, which is the same
         /// objection in a quieter voice. Growth continues in a second column
-        /// on the right, which the scratch notes open.
+        /// on the right, which the scratch notes open. Settings joins that
+        /// column rather than the content rail: it is not something to hover
+        /// past on the way to a track or a calendar, so it sits last,
+        /// furthest from the tabs people actually rest on.
         static let leftRail: [Tab] = [.media, .shelf, .clipboard, .snippets, .calendar, .translate]
-        static let rightRail: [Tab] = [.notes]
+        static let rightRail: [Tab] = [.notes, .settings]
     }
 
     @Published var isOpen = false
