@@ -64,6 +64,8 @@
 "No more meetings" = "No more meetings";
 "Nothing on the calendar for the next day" = "Nothing on the calendar for the next day";
 "Untitled" = "Untitled";
+"Calendars" = "Calendars";
+"Done" = "Done";
 
 /* Countdown, lower-case: the capital is added where the label is built.
    Abbreviated on purpose: a panel header has room for "in 12 min"
