@@ -63,14 +63,14 @@
 </script>
 
 <style>
-:root{--bg:#0d0c0b;--card:#161514;--ink:#f2efe9;--dim:#9a938a;--line:#2a2724;--accent:#e8814f;--code:#1e1c1a}
-@media (prefers-color-scheme:light){:root{--bg:#faf9f7;--card:#fff;--ink:#1a1815;--dim:#6b6560;--line:#e4e0d8;--accent:#b4441f;--code:#f2efe9}}
+:root{--bg:#000;--card:rgba(255,255,255,.05);--ink:#fff;--dim:rgba(255,255,255,.55);--line:rgba(255,255,255,.12);--code:rgba(255,255,255,.06)}
+@media (prefers-color-scheme:light){:root{--bg:#fff;--card:rgba(0,0,0,.03);--ink:#0a0a0a;--dim:rgba(0,0,0,.52);--line:rgba(0,0,0,.13);--code:rgba(0,0,0,.05)}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
  font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:860px;margin:0 auto;padding:0 22px 90px}
 h1,h2,h3{line-height:1.2;letter-spacing:-.02em;margin:0}
-a{color:var(--accent)}
+a{color:var(--ink);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-color:var(--line)}a:hover{text-decoration-color:var(--ink)}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:.12em .4em;border-radius:5px;font-size:.86em}
 nav{display:flex;justify-content:space-between;align-items:center;padding:20px 0;font-size:14px}
 nav a{color:var(--dim);text-decoration:none;margin-left:16px}
@@ -80,8 +80,8 @@ header{padding:36px 0 30px}
 h1{font-size:clamp(30px,5.6vw,50px);font-weight:700;margin-bottom:16px}
 .tagline{font-size:20px;color:var(--dim);max-width:56ch;margin:0 0 26px}
 .cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
-.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:10px;font-size:16px}
-.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn{display:inline-block;background:var(--ink);color:var(--bg);text-decoration:none;font-weight:600;padding:12px 22px;border-radius:10px;font-size:16px}.btn:hover{opacity:.85}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}.btn.ghost:hover{border-color:var(--ink);opacity:1}
 .meta{font-size:14px;color:var(--dim);margin:0}
 .shot{margin:34px 0;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#000}
 .shot img{display:block;width:100%;height:auto}
