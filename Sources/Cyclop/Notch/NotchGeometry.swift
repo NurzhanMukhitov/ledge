@@ -11,8 +11,36 @@ struct NotchGeometry {
     /// True when the display actually has a notch cut into it.
     let isPhysical: Bool
 
-    /// Size of the fully expanded panel body.
+    /// Metrics of the tab rail that do not depend on the notch. `railIconHeight`
+    /// is not among them — see below.
+    static let railSpacing: CGFloat = 4
+    /// Gap between the rail and the bottom edge of the body.
+    static let bodyBottomPadding: CGFloat = 14
+
+    /// Size of the fully expanded panel body. Held constant across every Mac:
+    /// letting it follow the header made two people on the very same model
+    /// see two different heights, just from different display-scaling
+    /// settings — 38 pt against 32 for the same physical notch, an 11 pt
+    /// spread from one slider (#27). What differs between Macs lives in
+    /// `railIconHeight` instead, which is the one thing in the body actually
+    /// free to give.
     let expandedSize = CGSize(width: 620, height: 208)
+
+    /// Height each rail icon gets. A ceiling, not a constant: six icons at
+    /// the full 24 pt plus the five 4 pt gaps between them is 164 pt, and
+    /// the body only has `expandedSize.height − notchSize.height −
+    /// bodyBottomPadding` left to give the rail once the header — the notch
+    /// itself — and the padding beneath are taken out of the fixed 208.
+    /// Rounded down rather than to the nearest point: a rail that asks for
+    /// more than it is given should visibly yield, not overflow by a
+    /// fraction that clips it.
+    var railIconHeight: CGFloat {
+        let icons = CGFloat(NotchViewModel.Tab.leftRail.count)
+        let available = expandedSize.height - notchSize.height - Self.bodyBottomPadding
+        let ceiling = (available - (icons - 1) * Self.railSpacing) / icons
+        return min(24, ceiling).rounded(.down)
+    }
+
     /// Slack around the panel so the concave shoulders and shadow are not clipped.
     let windowPadding = NSEdgeInsets(top: 0, left: 40, bottom: 44, right: 40)
 
