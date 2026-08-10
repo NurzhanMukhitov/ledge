@@ -165,7 +165,10 @@ final class NotchController {
 
         pointer.openRect = geometry.hoverRect
         pointer.warmZone = geometry.warmZone
-        pointer.closeRect = geometry.expandedHoverRect
+        // Cut for the tab that will be showing, not for the standard body: a
+        // rebuild restores the previous tab, and the teleprompter reaches
+        // twice as far down as the rest.
+        pointer.closeRect = geometry.hoverRect(for: vm.openBodySize)
         // A real notch is a hole: nothing is under it, so opening the moment the
         // pointer arrives costs nothing. A synthetic one sits on a working menu
         // bar, and a pointer crossing the middle of it is usually on its way
@@ -175,7 +178,13 @@ final class NotchController {
         pointer.isDragging = { [weak root] in root?.isReceivingDrag ?? false }
         pointer.isPanelOpen = { [weak vm] in vm?.isOpen ?? false }
         pointer.onChange = { [weak self] inside in
-            self?.setOpen(inside)
+            guard let self else { return }
+            // The one place the pointer does not decide — see `holdsOpen`.
+            // Guarded here rather than inside `setOpen` so that the reasons
+            // that are not the pointer, like the screen going to sleep, still
+            // close a running teleprompter.
+            if !inside, self.viewModel?.holdsOpen == true { return }
+            self.setOpen(inside)
         }
         // Everything outside the visible panel must reach the app underneath:
         // a `nil` from hitTest only discards the event, it does not forward it.
@@ -183,6 +192,22 @@ final class NotchController {
             self?.panel?.ignoresMouseEvents = !interactive
         }
         pointer.start()
+
+        // Switching tabs can change how far down the panel reaches, and both
+        // the clickable region and the region the pointer counts as "on the
+        // panel" are cut from that. Left alone, the teleprompter would open to
+        // its full height with only its top 208 pt alive.
+        vm.$tab
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let vm = self.viewModel, vm.isOpen else { return }
+                    // A pass later: `bodySize` reads `tab`, and this fires
+                    // while the property is still being set.
+                    DispatchQueue.main.async { self.refreshOpenRects() }
+                }
+            }
+            .store(in: &cancellables)
 
         // Driven by the deliberate request, not by which tab is showing: a
         // hover can land on the typing tab now, and that alone must not take
@@ -207,7 +232,7 @@ final class NotchController {
 
         // A rebuilt panel starts closed. If the pointer is already sitting on
         // it, reopen at once instead of waiting for a trip back to the notch.
-        if geometry.expandedHoverRect.contains(NSEvent.mouseLocation) {
+        if geometry.hoverRect(for: vm.openBodySize).contains(NSEvent.mouseLocation) {
             pointer.setInside(true)
             setOpen(true)
         }
@@ -227,13 +252,26 @@ final class NotchController {
         if !wants { scheduleCollapseIfPointerAway() }
     }
 
-    /// The pointer decides, always. A field with something in it does not hold
-    /// the panel open: it is opened by hovering, and anything that survives the
-    /// pointer leaving would have to be dismissed some other way, which is a
-    /// second rule to learn for a panel that has exactly one. What was typed is
-    /// kept, so coming back finds it where it was left.
+    /// The pointer decides, almost always. A field with something in it does
+    /// not hold the panel open: it is opened by hovering, and anything that
+    /// survives the pointer leaving has to be dismissed some other way, which
+    /// is a second rule to learn for a panel that has exactly one. What was
+    /// typed is kept, so coming back finds it where it was left.
+    ///
+    /// The teleprompter is the single exception, and it is one because it
+    /// cannot be anything else: a script is read while looking at the camera,
+    /// which is precisely the moment nobody is touching the trackpad. The
+    /// exception is held as narrow as it goes — one tab, and only while the
+    /// script is actually moving — and it is enforced where the pointer is
+    /// read, not here. Everything else that closes the panel still closes it:
+    /// the screen sleeping, the space changing, the display arrangement
+    /// changing. A pinned teleprompter surviving any of those would be a panel
+    /// stuck open on a screen nobody is looking at.
     private func setOpen(_ open: Bool) {
         guard let vm = viewModel, vm.isOpen != open else { return }
+        // Closing for any reason ends the take: the pin is a consequence of the
+        // script moving, so the script stops with the panel.
+        if !open { vm.teleprompter.suspend() }
         openGeneration += 1
         closeActiveRectWork?.cancel()
 
@@ -287,14 +325,21 @@ final class NotchController {
 
     private func scheduleCollapseIfPointerAway() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            guard let self, let geometry = self.viewModel?.geometry else { return }
+            guard let self, let vm = self.viewModel else { return }
             // Resync either way. A pointer that is still on the panel has to be
             // recorded as inside, or hover tracking stays convinced it left and
             // the panel hangs open until the notch is touched again.
-            let away = !geometry.expandedHoverRect.contains(NSEvent.mouseLocation)
+            let away = !vm.geometry.hoverRect(for: vm.openBodySize).contains(NSEvent.mouseLocation)
             self.pointer.setInside(!away)
-            if away { self.setOpen(false) }
+            if away, !vm.holdsOpen { self.setOpen(false) }
         }
+    }
+
+    /// Re-cuts both rects for the body currently on screen.
+    private func refreshOpenRects() {
+        guard let vm = viewModel, vm.isOpen else { return }
+        applyActiveRect(open: true)
+        pointer.closeRect = vm.geometry.hoverRect(for: vm.openBodySize)
     }
 
     private func applyActiveRect(open: Bool) {
@@ -302,7 +347,10 @@ final class NotchController {
         // Collapsed, the panel claims only its target strip — on a synthetic
         // notch that is deliberately shallower than the menu bar, so clicks on
         // status items underneath reach them instead of a panel nobody can see.
-        let size = open ? vm.geometry.expandedSize : vm.geometry.collapsedSize
+        // The open size is the current tab's, not a constant: the teleprompter
+        // is taller, and a rect cut for 208 would leave the bottom half of it
+        // visible but untouchable.
+        let size = open ? vm.openBodySize : vm.geometry.collapsedSize
         var rect = vm.geometry.contentRect(for: size)
         if open {
             // Slack so the concave shoulders stay grabbable. Never while

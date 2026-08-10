@@ -4,7 +4,7 @@ import Combine
 @MainActor
 final class NotchViewModel: ObservableObject {
     enum Tab: String, CaseIterable, Identifiable {
-        case media, shelf, clipboard, snippets, calendar, translate, notes, settings
+        case media, shelf, clipboard, snippets, calendar, translate, notes, teleprompter, settings
         var id: String { rawValue }
 
         var symbol: String {
@@ -16,6 +16,7 @@ final class NotchViewModel: ObservableObject {
             case .calendar: return "calendar"
             case .translate: return "translate"
             case .notes: return "note.text"
+            case .teleprompter: return "text.viewfinder"
             case .settings: return "gearshape.fill"
             }
         }
@@ -29,6 +30,7 @@ final class NotchViewModel: ObservableObject {
             case .calendar: return localized("Calendar")
             case .translate: return localized("Translate")
             case .notes: return localized("Notes")
+            case .teleprompter: return localized("Teleprompter")
             case .settings: return localized("Settings")
             }
         }
@@ -47,7 +49,7 @@ final class NotchViewModel: ObservableObject {
         /// past on the way to a track or a calendar, so it sits last,
         /// furthest from the tabs people actually rest on.
         static let leftRail: [Tab] = [.media, .shelf, .clipboard, .snippets, .calendar, .translate]
-        static let rightRail: [Tab] = [.notes, .settings]
+        static let rightRail: [Tab] = [.notes, .teleprompter, .settings]
     }
 
     @Published var isOpen = false
@@ -68,8 +70,22 @@ final class NotchViewModel: ObservableObject {
             if oldValue == .notes, tab != .notes { notes.leave() }
             // Leaving the tab that types gives the keyboard straight back.
             if !tab.needsKeyboard { wantsKeyboard = false }
+            // Leaving the teleprompter stops the scroll and drops the pin, so
+            // the panel goes back to obeying the pointer like everything else.
+            if oldValue == .teleprompter, tab != .teleprompter { teleprompter.suspend() }
         }
     }
+
+    /// Whether the panel must stay open with no pointer on it.
+    ///
+    /// This is the one exception to the rule stated at `NotchController.setOpen`
+    /// — the pointer decides, always — and it exists because the teleprompter
+    /// cannot work under that rule: the whole point is reading while looking at
+    /// the camera, hands nowhere near the trackpad. The exception is kept as
+    /// narrow as it can be. It applies to one tab, only while the script is
+    /// actually moving, and it ends three ways that need no explaining: the
+    /// script runs out, Escape, or a click anywhere outside the panel.
+    var holdsOpen: Bool { tab == .teleprompter && teleprompter.isRunning }
 
     /// Whether the panel currently holds the keyboard.
     ///
@@ -88,6 +104,7 @@ final class NotchViewModel: ObservableObject {
     let translator: Translator
     let snippets: SnippetStore
     let notes: NoteStore
+    let teleprompter: TeleprompterStore
     /// Shared by every pane that shows something worth not showing.
     let privacy = PrivacyMode()
 
@@ -102,6 +119,7 @@ final class NotchViewModel: ObservableObject {
         self.translator = Translator()
         self.snippets = SnippetStore()
         self.notes = NoteStore()
+        self.teleprompter = TeleprompterStore()
 
         // The panel header reads through to the stores — counters, the source
         // name, the equalizer. Nested ObservableObjects do not propagate on
@@ -137,9 +155,26 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Body this tab takes when open — asked whether it is open yet or not.
+    ///
+    /// Separate from `bodySize` because the rects are cut one step before the
+    /// panel is marked open: `setOpen` grows the interactive area first, so
+    /// the pointer never falls through a region the animation has not covered.
+    /// Reading a size that returns the notch until `isOpen` flips would hand
+    /// that step the collapsed size and leave the whole body drawn but deaf to
+    /// the pointer.
+    ///
+    /// One tab is taller than the rest. Type large enough to read at a glance
+    /// leaves room for two lines in the standard body, and two lines is not a
+    /// teleprompter — it is a countdown. The extra height buys the paragraph
+    /// the reader needs to see coming.
+    var openBodySize: CGSize {
+        tab == .teleprompter ? geometry.tallExpandedSize : geometry.expandedSize
+    }
+
     /// Size of the visible body for the current state.
     var bodySize: CGSize {
-        isOpen || isDropTargeted ? geometry.expandedSize : geometry.notchSize
+        isOpen || isDropTargeted ? openBodySize : geometry.notchSize
     }
 
     /// Off switch for people who copy images all day and do not want them kept.

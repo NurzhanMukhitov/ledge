@@ -26,6 +26,22 @@ struct NotchGeometry {
     /// free to give.
     let expandedSize = CGSize(width: 620, height: 208)
 
+    /// Body for the teleprompter, the one tab that asks for more.
+    ///
+    /// Same width, so the panel does not change shape sideways — only the
+    /// bottom edge moves, and it moves away from the notch rather than around
+    /// it. The height is the smallest that fits a paragraph at a size readable
+    /// without focusing: below this the tab shows the current line and the next
+    /// one, which is a countdown, not a script.
+    static let tallBodyHeight: CGFloat = 400
+    var tallExpandedSize: CGSize {
+        CGSize(width: expandedSize.width, height: Self.tallBodyHeight)
+    }
+    /// Tallest body any tab can ask for. The window is cut to this once and
+    /// never resized: it is transparent outside the visible panel, and what is
+    /// clickable is decided separately by the active rect.
+    var maxBodyHeight: CGFloat { max(expandedSize.height, Self.tallBodyHeight) }
+
     /// Height each rail icon gets. A ceiling, not a constant: six icons at
     /// the full 24 pt plus the five 4 pt gaps between them is 164 pt, and
     /// the body only has `expandedSize.height − notchSize.height −
@@ -94,7 +110,7 @@ struct NotchGeometry {
     var windowSize: CGSize {
         CGSize(
             width: expandedSize.width + windowPadding.left + windowPadding.right,
-            height: expandedSize.height + windowPadding.bottom
+            height: maxBodyHeight + windowPadding.bottom
         )
     }
 
@@ -171,12 +187,17 @@ struct NotchGeometry {
     }
 
     /// Area that keeps the panel open while expanded, in global screen coordinates.
-    var expandedHoverRect: CGRect {
+    var expandedHoverRect: CGRect { hoverRect(for: expandedSize) }
+
+    /// Taken for the body actually on screen, not for the standard one: on the
+    /// teleprompter the panel reaches 400 pt down, and a rect cut for 208 would
+    /// call the pointer "away" halfway through the tab it is resting on.
+    func hoverRect(for body: CGSize) -> CGRect {
         includingTopEdge(CGRect(
-            x: notchCenterX - expandedSize.width / 2 - 12,
-            y: screen.frame.maxY - expandedSize.height - 12,
-            width: expandedSize.width + 24,
-            height: expandedSize.height + 12
+            x: notchCenterX - body.width / 2 - 12,
+            y: screen.frame.maxY - body.height - 12,
+            width: body.width + 24,
+            height: body.height + 12
         ))
     }
 }
