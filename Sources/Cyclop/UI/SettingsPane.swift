@@ -40,6 +40,10 @@ struct SettingsPane: View {
                     ) {
                         ScreenshotVault.clear()
                         shelf.load()
+                        // The files were just deleted, so the cards have to go
+                        // with them. Safe to look here: the vault lives in the
+                        // app's own folder, which macOS does not guard.
+                        shelf.refreshFromDisk()
                         refreshUsage()
                     }
                 }

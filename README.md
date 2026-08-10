@@ -134,6 +134,10 @@ Calendar tab alone, and the system dialog appears neither at launch nor when the
 tab is opened, but on an explicit press of a button on a screen that explains
 why. Don't use the calendar and the app stays without permissions entirely.
 
+A file put on the shelf from Downloads, Documents or the Desktop is the one thing
+macOS asks about separately, and it asks when the shelf is opened, not at launch.
+Refusing breaks nothing: the card stays, just without a preview.
+
 Permissions would only be needed by the fallback path, if the main one ever stops
 working: Automation for Apple Music and Spotify, and Accessibility for the media
 keys.

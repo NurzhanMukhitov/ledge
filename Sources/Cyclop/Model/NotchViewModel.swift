@@ -64,6 +64,11 @@ final class NotchViewModel: ObservableObject {
             // The snippets file is edited from outside the app, so it is read
             // on the way in rather than held from launch.
             if tab == .snippets { snippets.reload() }
+            // Same reason, sharper stakes: the shelf can hold files inside the
+            // folders macOS guards, and looking at one raises a permission
+            // prompt. It is asked here, with the shelf on screen, rather than
+            // at launch with nothing to explain it.
+            if tab == .shelf { shelf.refreshFromDisk() }
             // Leaving the notes sweeps out the blank ones — they cost one
             // hover to recreate, and a trail of empty cards is the clutter a
             // scratchpad exists to avoid.

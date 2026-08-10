@@ -33,6 +33,20 @@ final class ShelfStore: ObservableObject {
     /// but their files stay in the folder.
     private let limit = 60
 
+    /// Rebuilds the cards from the stored paths without reading a single file.
+    ///
+    /// Nothing here touches the disk, and that is the whole point. Since
+    /// Catalina, the first look at anything inside Desktop, Documents or
+    /// Downloads raises a system permission prompt — for `stat` as much as for
+    /// a read — and this used to run at launch, for every card, whether or not
+    /// anyone was going to open the shelf. One file dragged in from Downloads
+    /// months ago meant a dialog on every cold start, arriving with no visible
+    /// cause: the panel was not even open. Cyclop promises no permissions until
+    /// the calendar is opened, and this quietly broke that promise.
+    ///
+    /// So the icon comes from the file *name* — the extension is enough to
+    /// name a type, and a type is enough to draw an icon — and whether the file
+    /// is still there is not asked until someone looks at the shelf.
     func load() {
         // Card ids are minted per instance, so a reload orphans any selection:
         // the ids it holds now name nothing. Kept, they showed as a phantom
@@ -41,9 +55,46 @@ final class ShelfStore: ObservableObject {
         let paths = UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
         items = paths
             .map(URL.init(fileURLWithPath:))
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
-            .map { ShelfItem(url: $0, icon: NSWorkspace.shared.icon(forFile: $0.path)) }
+            .map { ShelfItem(url: $0, icon: Self.icon(forName: $0)) }
+    }
+
+    /// An icon for a path, derived from its extension alone.
+    private static func icon(forName url: URL) -> NSImage {
+        let type = UTType(filenameExtension: url.pathExtension) ?? .data
+        return NSWorkspace.shared.icon(for: type)
+    }
+
+    /// Called when the shelf comes into view, and only then.
+    ///
+    /// This is where the disk is finally touched: missing files leave, real
+    /// icons and previews arrive. If a permission prompt is coming, it comes
+    /// here — with the shelf on screen and the cards in front of the person
+    /// being asked, which is the difference between a question and an
+    /// interruption.
+    func refreshFromDisk() {
+        guard !items.isEmpty else { return }
+        let gone = Set(items.filter { Self.isGone($0.url) }.map(\.id))
+        if !gone.isEmpty {
+            items.removeAll { gone.contains($0.id) }
+            selection.subtract(gone)
+            persist()
+        }
         items.forEach(loadThumbnail)
+    }
+
+    /// Whether the file is actually gone, as opposed to merely out of reach.
+    ///
+    /// `fileExists` answers false to both, and the difference matters: a card
+    /// whose file was deleted should leave the shelf, while one the app was
+    /// just refused access to should stay exactly where it is. Treating them
+    /// alike meant a single "Don't Allow" silently emptied the shelf of
+    /// everything kept in Downloads, with the files still sitting there.
+    private static func isGone(_ url: URL) -> Bool {
+        do {
+            return try !url.checkResourceIsReachable()
+        } catch let error as NSError {
+            return error.code == NSFileReadNoSuchFileError
+        }
     }
 
     func add(_ urls: [URL]) {
