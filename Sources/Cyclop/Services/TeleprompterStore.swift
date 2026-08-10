@@ -59,13 +59,7 @@ final class TeleprompterStore: ObservableObject {
     private static let fontKey = "teleprompter.fontSize"
     private let defaults = UserDefaults.standard
 
-    private static let file: URL = {
-        let fm = FileManager.default
-        let folder = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Cyclop", isDirectory: true)
-        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appendingPathComponent("teleprompter.txt")
-    }()
+    private static let file = Support.file("teleprompter.txt")
 
     private var timer: Timer?
     private let saves = DebouncedWrite()

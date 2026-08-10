@@ -72,13 +72,7 @@ final class SnippetStore: ObservableObject {
 
     /// `~/Library/Application Support/Cyclop/snippets.json`. A plain array of
     /// `{"label": "...", "text": "..."}`, where `label` may be left out.
-    static let file: URL = {
-        let fm = FileManager.default
-        let folder = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Cyclop", isDirectory: true)
-        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appendingPathComponent("snippets.json")
-    }()
+    static let file = Support.file("snippets.json")
 
     /// Re-read on every visit to the tab. The file is edited from outside the
     /// app, so the only sensible moment to trust what is in memory is the

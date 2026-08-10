@@ -17,11 +17,7 @@ enum ScreenshotVault {
         if (try? fm.createDirectory(at: pictures, withIntermediateDirectories: true)) != nil {
             return pictures
         }
-        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Cyclop", isDirectory: true)
-            .appendingPathComponent("Screenshots", isDirectory: true)
-        try? fm.createDirectory(at: support, withIntermediateDirectories: true)
-        return support
+        return Support.directory("Screenshots")
     }()
 
     private static let stamp: DateFormatter = {
