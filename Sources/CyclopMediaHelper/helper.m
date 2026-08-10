@@ -117,7 +117,12 @@ static void publish(void) {
             NSString *title = info[@"kMRMediaRemoteNowPlayingInfoTitle"] ?: @"";
 
             NSMutableDictionary *out = [NSMutableDictionary dictionary];
-            out[@"playing"] = @(playing ? YES : NO);
+            // `playing ? @YES : @NO`, not `@(playing ? YES : NO)`: in C the
+            // ternary promotes both branches to `int`, so the boxed number came
+            // out an integer and the field serialised as 1 rather than true.
+            // Swift read it correctly either way, but the wire format was
+            // describing a flag as a count.
+            out[@"playing"] = playing ? @YES : @NO;
             out[@"title"] = title;
             out[@"artist"] = info[@"kMRMediaRemoteNowPlayingInfoArtist"] ?: @"";
             out[@"album"] = info[@"kMRMediaRemoteNowPlayingInfoAlbum"] ?: @"";

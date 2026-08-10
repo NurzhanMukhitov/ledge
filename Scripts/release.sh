@@ -46,6 +46,13 @@ TEMPLATE
     fail "нет заметок к релизу. Завел $NOTES — впиши, что нового, и запусти снова"
 fi
 
+cat <<'NOTE'
+
+    Перед выпуском — docs/release-checklist.md. Две минуты руками; всё, что там,
+    сборка и CI не проверяют по своей природе.
+
+NOTE
+
 echo "==> сборка образа $VERSION"
 "$ROOT/Scripts/dmg.sh" >/dev/null
 [ -f "$DMG" ] || fail "образ не собрался: $DMG"
