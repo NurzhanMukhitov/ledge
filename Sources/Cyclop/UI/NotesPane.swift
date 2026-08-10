@@ -313,22 +313,12 @@ private struct NoteRow: View {
 
 private struct CopyNoteButton: View {
     let text: String
-    @State private var copied = false
 
     var body: some View {
-        Button {
+        CopyButton {
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
-            copied = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { copied = false }
-        } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(copied ? Color.green : Theme.secondary)
         }
-        .buttonStyle(.plain)
-        .help(localized("Copy"))
-        .animation(Theme.contentAnimation, value: copied)
     }
 }

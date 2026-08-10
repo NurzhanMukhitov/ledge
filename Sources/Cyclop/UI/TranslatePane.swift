@@ -14,7 +14,6 @@ struct TranslatePane: View {
 
     @FocusState private var focused: Bool
     @State private var configuration: TranslationSession.Configuration?
-    @State private var copied = false
     /// Measured once, off the layout path. See `body`.
     @State private var paneSize: CGSize = .zero
 
@@ -104,22 +103,12 @@ struct TranslatePane: View {
     private func result(_ font: CGFloat) -> some View {
         column(Translator.name(translator.route.target)) {
             if !translator.output.isEmpty {
-                Button {
-                    translator.copyOutput()
-                    copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { copied = false }
-                } label: {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(copied ? Color.green : Theme.secondary)
-                }
-                .buttonStyle(.plain)
+                CopyButton { translator.copyOutput() }
             }
         } content: {
             outcome(font)
         }
         .padding(10)
-        .animation(Theme.contentAnimation, value: copied)
     }
 
     @ViewBuilder

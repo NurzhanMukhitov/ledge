@@ -81,8 +81,7 @@ private struct ClipRow: View {
         .onHover { hovering = $0 }
         .onTapGesture {
             clipboard.copy(item)
-            justCopied = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { justCopied = false }
+            flash($justCopied)
         }
         .animation(Theme.contentAnimation, value: hovering)
         .animation(Theme.contentAnimation, value: justCopied)

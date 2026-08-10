@@ -68,14 +68,13 @@ final class TeleprompterStore: ObservableObject {
     }()
 
     private var timer: Timer?
-    private var saveWork: DispatchWorkItem?
+    private let saves = DebouncedWrite()
 
     init() {
         script = (try? String(contentsOf: Self.file, encoding: .utf8)) ?? ""
         // Reading the file above went through `script`'s observer and armed a
-        // save of what was just loaded. Harmless, but the offset it also reset
-        // is the point: start at the top.
-        saveWork?.cancel()
+        // save of what was just loaded. Harmless, but worth not doing.
+        saves.cancel()
         if let stored = defaults.object(forKey: Self.speedKey) as? Double {
             speed = min(max(stored, 0.3), 3.0)
         }
@@ -141,17 +140,12 @@ final class TeleprompterStore: ObservableObject {
     /// and a file anyone can open in any editor is worth more than a format
     /// only this app reads.
     private func scheduleSave() {
-        saveWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated { self?.flush() }
-        }
-        saveWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+        saves.schedule { [weak self] in self?.persist() }
     }
 
-    func flush() {
-        saveWork?.cancel()
-        saveWork = nil
+    func flush() { saves.flush() }
+
+    private func persist() {
         do {
             try script.write(to: Self.file, atomically: true, encoding: .utf8)
         } catch {

@@ -33,7 +33,7 @@ final class NoteStore: ObservableObject {
         return folder.appendingPathComponent("notes.json")
     }()
 
-    private var saveWork: DispatchWorkItem?
+    private let saves = DebouncedWrite()
 
     init() {
         load()
@@ -88,17 +88,12 @@ final class NoteStore: ObservableObject {
     /// lives in memory either way, and the file only has to be right by the
     /// time somebody could read it.
     private func scheduleSave() {
-        saveWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated { self?.flush() }
-        }
-        saveWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+        saves.schedule { [weak self] in self?.persist() }
     }
 
-    func flush() {
-        saveWork?.cancel()
-        saveWork = nil
+    func flush() { saves.flush() }
+
+    private func persist() {
         do {
             try JSONEncoder().encode(notes).write(to: Self.file, options: .atomic)
         } catch {
