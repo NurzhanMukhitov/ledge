@@ -19,6 +19,15 @@ final class NowPlayingFeed {
         var artwork: Data?
         /// Name of the app owning the session, resolved from its pid.
         var source: String?
+        /// Command codes the player offers right now, or nil when the helper
+        /// could not ask. Nil means unknown, not none — a browser tab with a
+        /// single video offers no skip commands at all, and that is worth
+        /// showing, but a missing answer is not the same as an empty one.
+        var commands: Set<Int>?
+
+        func offers(_ command: Command) -> Bool {
+            commands?.contains(command.rawValue) ?? true
+        }
 
         var isEmpty: Bool { title.isEmpty }
     }
@@ -199,6 +208,9 @@ final class NowPlayingFeed {
         }
         if let pid = object["pid"] as? Int, pid > 0 {
             snapshot.source = NSRunningApplication(processIdentifier: pid_t(pid))?.localizedName
+        }
+        if let codes = object["commands"] as? [Int] {
+            snapshot.commands = Set(codes)
         }
         onUpdate?(snapshot)
     }

@@ -147,18 +147,28 @@ struct MediaPane: View {
 
     // MARK: - Transport
 
+    /// Skipping is dimmed, not hidden, when the player does not offer it — a
+    /// video in a browser tab has nothing to skip to, so the command would
+    /// leave and nothing would happen. Dim says "not here"; a button that
+    /// looks live and does nothing says "broken". The system's own Now Playing
+    /// widget dims the same two arrows on the same session.
     private var controls: some View {
         HStack(spacing: 20) {
             Button { media.previous() } label: { Image(systemName: "backward.fill") }
                 .buttonStyle(NotchButtonStyle(size: 30))
+                .disabled(!media.canSkip)
+                .opacity(media.canSkip ? 1 : 0.35)
             Button { media.togglePlayPause() } label: {
                 Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
             }
             .buttonStyle(NotchButtonStyle(size: 40, prominent: true))
             Button { media.next() } label: { Image(systemName: "forward.fill") }
                 .buttonStyle(NotchButtonStyle(size: 30))
+                .disabled(!media.canSkip)
+                .opacity(media.canSkip ? 1 : 0.35)
         }
         .frame(maxWidth: .infinity)
+        .animation(.easeInOut(duration: 0.15), value: media.canSkip)
     }
 
     private var emptyState: some View {

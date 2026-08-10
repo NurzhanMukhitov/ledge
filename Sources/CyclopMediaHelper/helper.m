@@ -23,12 +23,14 @@ typedef void (*MRRegisterFn)(dispatch_queue_t);
 typedef void (*MRGetPIDFn)(dispatch_queue_t, void (^)(int));
 typedef void (*MRGetClientsFn)(dispatch_queue_t, void (^)(NSArray *));
 typedef void (*MRSendCommandToPlayerFn)(int, CFDictionaryRef, id, id, id, void (^)(id));
+typedef void (*MRGetCommandsForPlayerFn)(id, dispatch_queue_t, void (^)(NSArray *));
 
 static MRGetInfoFn sGetInfo;
 static MRGetBoolFn sGetIsPlaying;
 static MRGetPIDFn sGetPID;
 static MRGetClientsFn sGetClients;
 static MRSendCommandToPlayerFn sSendCommandToPlayer;
+static MRGetCommandsForPlayerFn sGetCommandsForPlayer;
 static int sOwnerPID;
 static dispatch_queue_t sQueue;
 static NSString *sArtworkID;
@@ -50,12 +52,51 @@ typedef NS_ENUM(int, MRCommand) {
     MRCommandSeekToPlaybackPosition = 24,
 };
 
+static id activePlayerPath(void);
+
 static void emit(NSDictionary *payload) {
     NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:NULL];
     if (!json) return;
     fwrite(json.bytes, 1, json.length, stdout);
     fputc('\n', stdout);
     fflush(stdout);
+}
+
+/// What the player says it accepts, refreshed alongside each publish and read
+/// from the last answer rather than waited for.
+///
+/// It is cached for the same reason the owning pid is, and then for one more.
+/// The reason shared with the pid: it only labels the payload, so a cycle of
+/// staleness costs nothing. The reason of its own: asked from inside the
+/// `GetNowPlayingInfo` callback — a block already running on `sQueue` — the
+/// answer never arrives at all. Nesting it there silenced the feed outright,
+/// because the payload waiting on that answer was never sent. Kept flat, both
+/// calls return.
+///
+/// A browser tab playing one video registers no next/previous handler — there
+/// is nothing to skip to — so those codes are absent and anything sent for
+/// them is dropped without a word. macOS greys its own skip buttons out on
+/// exactly these sessions.
+static NSArray *sCommands;
+
+static void refreshCommands(void) {
+    if (!sGetCommandsForPlayer) return;
+    id path = activePlayerPath();
+    if (!path) return;
+    sGetCommandsForPlayer(path, sQueue, ^(NSArray *infos) {
+        NSMutableArray *codes = [NSMutableArray array];
+        for (id info in infos) {
+            id code = [info valueForKey:@"command"];
+            id enabled = [info valueForKey:@"enabled"];
+            // A command can be listed and still be off right now. Only what is
+            // both listed and enabled counts as offered.
+            if ([code isKindOfClass:NSNumber.class] &&
+                (enabled == nil || [enabled boolValue])) {
+                [codes addObject:code];
+            }
+        }
+        sCommands = codes;
+    });
 }
 
 /// Reads the current record and prints it. Artwork is only included when the
@@ -69,6 +110,7 @@ static void publish(void) {
     if (!sGetInfo || !sGetIsPlaying) return;
     // Cached rather than nested a call deeper: it only labels the source.
     if (sGetPID) sGetPID(sQueue, ^(int pid) { sOwnerPID = pid; });
+    refreshCommands();
     sGetIsPlaying(sQueue, ^(Boolean playing) {
         sGetInfo(sQueue, ^(CFDictionaryRef raw) {
             NSDictionary *info = (__bridge NSDictionary *)raw;
@@ -96,6 +138,11 @@ static void publish(void) {
                 sArtworkID = artworkID;
             }
             if (title.length == 0) sArtworkID = nil;
+
+            // Left out entirely until an answer has arrived: absent is not the
+            // same as empty, and "unknown" must not read as "accepts nothing"
+            // and dim every button.
+            if (sCommands) out[@"commands"] = sCommands;
 
             emit(out);
         });
@@ -149,6 +196,7 @@ static void startFeed(void) {
         sGetPID = (MRGetPIDFn)dlsym(handle, "MRMediaRemoteGetNowPlayingApplicationPID");
         sGetClients = (MRGetClientsFn)dlsym(handle, "MRMediaRemoteGetNowPlayingClients");
         sSendCommandToPlayer = (MRSendCommandToPlayerFn)dlsym(handle, "MRMediaRemoteSendCommandToPlayer");
+        sGetCommandsForPlayer = (MRGetCommandsForPlayerFn)dlsym(handle, "MRMediaRemoteGetSupportedCommandsForPlayer");
 
         MRRegisterFn registerNotifications =
             (MRRegisterFn)dlsym(handle, "MRMediaRemoteRegisterForNowPlayingNotifications");

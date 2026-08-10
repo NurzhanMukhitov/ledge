@@ -20,6 +20,13 @@ final class MediaController: ObservableObject {
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var position: TimeInterval = 0
     @Published private(set) var sourceName: String?
+    /// Whether the player accepts skipping at all. A browser tab playing one
+    /// video registers no handler for it — the command leaves and nothing
+    /// happens — so the buttons go dim rather than dead, the way the system's
+    /// own Now Playing widget dims them for the same session. True until told
+    /// otherwise: the scripted fallback below drives Music and Spotify, and
+    /// both skip fine.
+    @Published private(set) var canSkip = true
 
     private let feed = NowPlayingFeed()
     private var feedAvailable = true
@@ -123,6 +130,10 @@ final class MediaController: ObservableObject {
         isPlaying = snapshot.isPlaying || snapshot.rate > 0
         duration = snapshot.duration
         sourceName = snapshot.source
+        // Both directions travel together: no player has ever offered one
+        // without the other, and two separately dimmed arrows would read as
+        // a glitch rather than a limit.
+        canSkip = snapshot.offers(.next) && snapshot.offers(.previous)
 
         let reported = reportedPosition(from: snapshot)
 
@@ -176,6 +187,7 @@ final class MediaController: ObservableObject {
         duration = 0
         position = 0
         sourceName = nil
+        canSkip = true
         updateTicker()
     }
 
@@ -184,6 +196,10 @@ final class MediaController: ObservableObject {
     private func switchToScriptingFallback() {
         guard feedAvailable else { return }
         feedAvailable = false
+        // Nothing reports supported commands on this route, and the two apps it
+        // drives both skip — so the arrows come back rather than staying dim
+        // on a state no longer being refreshed.
+        canSkip = true
         NSLog("Cyclop: Now Playing helper unavailable, falling back to Music/Spotify scripting")
 
         let center = DistributedNotificationCenter.default()
