@@ -42,6 +42,18 @@ struct NotchGeometry {
     /// clickable is decided separately by the active rect.
     var maxBodyHeight: CGFloat { max(expandedSize.height, Self.tallBodyHeight) }
 
+    /// What the body has left for content on an ordinary tab, once the header
+    /// and the padding beneath are taken out.
+    ///
+    /// The rails are held to this even on the tab that is taller, so the icons
+    /// stay at the same height on every tab. Centred in the body instead, they
+    /// slid down by half the difference — 96 pt — the moment the teleprompter
+    /// opened, which put the icon just clicked well below the pointer that had
+    /// clicked it.
+    var standardContentHeight: CGFloat {
+        expandedSize.height - notchSize.height - Self.bodyBottomPadding
+    }
+
     /// Height each rail icon gets. A ceiling, not a constant: six icons at
     /// the full 24 pt plus the five 4 pt gaps between them is 164 pt, and
     /// the body only has `expandedSize.height − notchSize.height −
