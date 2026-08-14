@@ -76,6 +76,15 @@ enum VideoConverter {
         let prefix: String
         let videoBitrate: Int
         let estimate: Int
+        /// Widest the picture may come out, or `nil` to leave it alone.
+        ///
+        /// This is the speed lever, and it was a surprise: swapping codecs and
+        /// hand-tuning buffers changed nothing measurable, while capping a
+        /// retina capture at 1920 halved the time — two and a half times fewer
+        /// pixels to decode, scale and encode. Same target bitrate, so the file
+        /// lands at the same size; it simply spends those bytes on fewer pixels
+        /// and looks better for it.
+        let maxWidth: Int?
     }
 
     private static let audioBitrate = 128_000
@@ -93,15 +102,20 @@ enum VideoConverter {
         // Shares of the source rate rather than fixed numbers: a 4K capture and
         // a phone clip need wildly different absolute bitrates to land in the
         // same place, and the source's own rate already encodes that.
-        let steps: [(String, String, Double)] = [
-            (localized("Light"), localized("Compressed light"), 0.60),
-            (localized("Medium"), localized("Compressed medium"), 0.30),
-            (localized("Strong"), localized("Compressed strong"), 0.15),
+        // Light keeps the original frame: it is the rung for "make this a bit
+        // smaller without touching anything", and resizing is touching
+        // something. The two below it are already trading picture for size, and
+        // 1920 is where a screen recording stops being readable if pushed
+        // further — text is what people record screens for.
+        let steps: [(String, String, Double, Int?)] = [
+            (localized("Light"), localized("Compressed light"), 0.60, nil),
+            (localized("Medium"), localized("Compressed medium"), 0.30, 1920),
+            (localized("Strong"), localized("Compressed strong"), 0.15, 1920),
         ]
-        return steps.map { label, prefix, share in
+        return steps.map { label, prefix, share, width in
             let video = Int(Double(rate) * share)
             let bytes = Int(Double(video + audioBitrate) / 8 * seconds)
-            return Rung(label: label, prefix: prefix, videoBitrate: video, estimate: bytes)
+            return Rung(label: label, prefix: prefix, videoBitrate: video, estimate: bytes, maxWidth: width)
         }
     }
 
@@ -128,23 +142,57 @@ enum VideoConverter {
 
         let seconds = CMTimeGetSeconds(duration)
 
-        let videoOutput = AVAssetReaderTrackOutput(
-            track: videoTrack,
-            outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
-        )
+        let pixels: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+        ]
+
+        // Scaling is asked of a video composition rather than of the encoder, so
+        // it happens on the GPU on the way out of the decoder instead of as a
+        // second pass over full-size frames.
+        //
+        // The composition's own render size is what gets scaled, not the track's
+        // natural size: it already has the track's rotation applied, and a
+        // portrait clip scaled by its unrotated dimensions comes out in a box of
+        // the wrong shape.
+        let videoOutput: AVAssetReaderOutput
+        var outSize = CGSize(width: abs(size.width), height: abs(size.height))
+        var composed = false
+
+        if let maxWidth = rung.maxWidth,
+           let composition = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset),
+           composition.renderSize.width > CGFloat(maxWidth) {
+            let base = composition.renderSize
+            let scale = CGFloat(maxWidth) / base.width
+            // H.264 wants even dimensions; an odd one is refused outright.
+            outSize = CGSize(width: (base.width * scale / 2).rounded() * 2,
+                             height: (base.height * scale / 2).rounded() * 2)
+            composition.renderSize = outSize
+            let output = AVAssetReaderVideoCompositionOutput(videoTracks: [videoTrack], videoSettings: pixels)
+            output.videoComposition = composition
+            videoOutput = output
+            composed = true
+        } else {
+            videoOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: pixels)
+        }
         guard reader.canAdd(videoOutput) else { return false }
         reader.add(videoOutput)
 
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: Int(abs(size.width)),
-            AVVideoHeightKey: Int(abs(size.height)),
-            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: rung.videoBitrate],
+            AVVideoWidthKey: Int(outSize.width),
+            AVVideoHeightKey: Int(outSize.height),
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: rung.videoBitrate,
+                AVVideoMaxKeyFrameIntervalKey: 60,
+            ],
         ])
         videoInput.expectsMediaDataInRealTime = false
         // The source's own rotation is metadata, not pixels. Dropped, a video
-        // shot on a phone comes out on its side.
-        if let transform = try? await videoTrack.load(.preferredTransform) {
+        // shot on a phone comes out on its side — but only when the frames
+        // arrive unrotated. A composition has already turned them, and setting
+        // the transform again would turn them twice.
+        if !composed, let transform = try? await videoTrack.load(.preferredTransform) {
             videoInput.transform = transform
         }
         guard writer.canAdd(videoInput) else { return false }
@@ -152,7 +200,7 @@ enum VideoConverter {
 
         // Audio is optional: a screen recording made without a microphone has
         // no audio track at all, and demanding one would fail the whole run.
-        var audioPair: (AVAssetReaderTrackOutput, AVAssetWriterInput)?
+        var audioPair: (AVAssetReaderOutput, AVAssetWriterInput)?
         if let audioTrack = try? await asset.loadTracks(withMediaType: .audio).first {
             let output = AVAssetReaderTrackOutput(
                 track: audioTrack,
@@ -216,7 +264,7 @@ enum VideoConverter {
     /// The audio half of the pair, when there is one. A separate function only
     /// because `async let` needs a call to start, not an optional to unwrap.
     private static func pumpOptional(
-        _ pair: (AVAssetReaderTrackOutput, AVAssetWriterInput)?,
+        _ pair: (AVAssetReaderOutput, AVAssetWriterInput)?,
         reader: AVAssetReader
     ) async -> Bool {
         guard let pair else { return true }
@@ -230,7 +278,7 @@ enum VideoConverter {
     /// minutes at a time, and a busy loop would hold a core the encoder itself
     /// wants.
     private static func pump(
-        _ output: AVAssetReaderTrackOutput,
+        _ output: AVAssetReaderOutput,
         into input: AVAssetWriterInput,
         reader: AVAssetReader,
         report: (@Sendable (Double) -> Void)?
