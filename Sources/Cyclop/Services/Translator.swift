@@ -16,6 +16,11 @@ final class Translator: ObservableObject {
     /// either — auto-detection fails with `unableToIdentifyLanguage`, and the
     /// translation that follows hangs instead of returning an error.
     struct Route: Equatable {
+        /// Which column a language was picked in. Not which end of the pair it
+        /// is: the direction flips with the script of the text, so the left
+        /// column is sometimes `first` and sometimes `second`.
+        enum Side { case source, target }
+
         var source: Locale.Language
         var target: Locale.Language
     }
@@ -36,20 +41,119 @@ final class Translator: ObservableObject {
 
     private var attempt = 0
 
+    init() {
+        let defaults = UserDefaults.standard
+        first = defaults.string(forKey: Self.firstKey).map(Locale.Language.init(identifier:)) ?? Self.english
+        second = defaults.string(forKey: Self.secondKey).map(Locale.Language.init(identifier:)) ?? Self.russian
+    }
+
     var request: Request { Request(text: input, attempt: attempt) }
     var trimmed: String { input.trimmingCharacters(in: .whitespacesAndNewlines) }
-    var route: Route { Self.route(for: trimmed) }
+    var route: Route { routing(for: trimmed) }
 
-    /// Russian goes out to English, everything else comes in to Russian.
+    /// The chosen pair, and the direction is worked out from the text.
     ///
-    /// Decided by script rather than by language detection: a single word is
-    /// far too short to identify reliably, and "привет" comes back as Bulgarian
-    /// often enough to matter.
-    static func route(for text: String) -> Route {
-        let cyrillic = text.unicodeScalars.contains { (0x0400...0x04FF).contains($0.value) }
-        return cyrillic
-            ? Route(source: russian, target: english)
-            : Route(source: english, target: russian)
+    /// Direction is decided by script rather than by language detection: a
+    /// single word is far too short to identify reliably, and "привет" comes
+    /// back as Bulgarian often enough to matter. Whichever side's script the
+    /// text is written in becomes the source.
+    ///
+    /// When both sides share a script — German and English, say — there is
+    /// nothing to tell them apart, so the pair keeps its stated direction and
+    /// the swap button becomes the only way round. That is the honest failure:
+    /// guessing between two Latin languages from a word and a half is how a
+    /// translator starts answering confidently in the wrong direction.
+    func routing(for text: String) -> Route {
+        let forward = Route(source: first, target: second)
+        guard let script = Self.script(of: text) else { return forward }
+        if script == second.script?.identifier, script != first.script?.identifier {
+            return Route(source: second, target: first)
+        }
+        return forward
+    }
+
+    /// Enough of a script to tell one side of the pair from the other.
+    ///
+    /// Only the blocks that separate the installed languages are looked at, and
+    /// the first hit wins — mixed text is normally one language with a borrowed
+    /// word in it, and the borrowed word is not what is being translated.
+    private static func script(of text: String) -> String? {
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x0400...0x04FF: return "Cyrl"
+            case 0x0600...0x06FF, 0x0750...0x077F: return "Arab"
+            case 0x3040...0x30FF: return "Jpan"
+            case 0x4E00...0x9FFF: return "Hani"
+            case 0x0041...0x005A, 0x0061...0x007A, 0x00C0...0x024F: return "Latn"
+            default: continue
+            }
+        }
+        return nil
+    }
+
+    // MARK: - The pair
+
+    private static let firstKey = "translate.first"
+    private static let secondKey = "translate.second"
+
+    /// The two languages on screen. `first` is the left column's default side.
+    ///
+    /// Stored as identifiers rather than as the plain codes the panel used to
+    /// hardcode: every pack is regional, so a language without a region names a
+    /// variant that may not be the installed one.
+    @Published var first: Locale.Language {
+        didSet { UserDefaults.standard.set(first.maximalIdentifier, forKey: Self.firstKey) }
+    }
+    @Published var second: Locale.Language {
+        didSet { UserDefaults.standard.set(second.maximalIdentifier, forKey: Self.secondKey) }
+    }
+
+    /// Everything this Mac can actually translate to or from `second`.
+    ///
+    /// Only installed pairs are offered. Listing all twenty-one supported
+    /// languages would put eight dead ends in the menu, each of which answers
+    /// with the same "download a pack" wall the panel cannot open.
+    @Published private(set) var available: [Locale.Language] = []
+
+    /// Sets whichever end of the pair that column is currently showing.
+    ///
+    /// Resolving the column to an end through the live route rather than
+    /// assuming left is `first`: with Cyrillic in the field the columns are
+    /// already the other way round, and picking German on the left would
+    /// otherwise replace the language on the right.
+    func choose(_ language: Locale.Language, for side: Route.Side) {
+        let forward = route.source == first
+        if (side == .source) == forward {
+            first = language
+        } else {
+            second = language
+        }
+        clear()
+        attempt += 1
+        Task { await loadAvailable() }
+    }
+
+    func swap() {
+        let held = first
+        first = second
+        second = held
+        clear()
+        attempt += 1
+    }
+
+    /// Fills the menu. Cheap enough to repeat, so it runs whenever the tab is
+    /// opened — packs get downloaded while the app is running, and a menu that
+    /// only listed what existed at launch would be wrong by the afternoon.
+    func loadAvailable() async {
+        let availability = LanguageAvailability()
+        var found: [Locale.Language] = []
+        for language in await availability.supportedLanguages {
+            guard language.languageCode?.identifier != second.languageCode?.identifier else { continue }
+            let out = await availability.status(from: language, to: second) == .installed
+            let back = await availability.status(from: second, to: language) == .installed
+            if out || back { found.append(language) }
+        }
+        available = found.sorted { Self.name($0).localizedCompare(Self.name($1)) == .orderedAscending }
     }
 
     /// The same route, said in the regional variant this machine actually has.

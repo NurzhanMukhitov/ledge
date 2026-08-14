@@ -47,6 +47,7 @@ struct TranslatePane: View {
         .translationTask(configuration) { session in
             await translator.run(session)
         }
+        .task { await translator.loadAvailable() }
         .onAppear { focused = wantsKeyboard }
         .onChange(of: wantsKeyboard) { _, wants in focused = wants }
     }
@@ -54,7 +55,14 @@ struct TranslatePane: View {
     // MARK: - Left
 
     private func source(_ font: CGFloat) -> some View {
-        column(Translator.name(translator.route.source)) {
+        column(.source, Translator.name(translator.route.source)) {
+            Button { translator.swap() } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(localized("Swap languages"))
             if !translator.input.isEmpty {
                 Button { translator.reset() } label: {
                     Image(systemName: "xmark")
@@ -101,7 +109,7 @@ struct TranslatePane: View {
     // MARK: - Right
 
     private func result(_ font: CGFloat) -> some View {
-        column(Translator.name(translator.route.target)) {
+        column(.target, Translator.name(translator.route.target)) {
             if !translator.output.isEmpty {
                 CopyButton { translator.copyOutput() }
             }
@@ -184,16 +192,41 @@ struct TranslatePane: View {
     // MARK: - Shared
 
     private func column<Accessory: View, Content: View>(
+        _ side: Translator.Route.Side?,
         _ title: String,
         @ViewBuilder accessory: () -> Accessory,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(title.uppercased())
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.tertiary)
+                // The title is the control. There is no room in 620 points for a
+                // pair of pickers next to two columns of text, and the language
+                // name is already the thing anyone would click to change it.
+                if let side {
+                    Menu {
+                        ForEach(translator.available, id: \.maximalIdentifier) { language in
+                            Button(Translator.name(language)) { translator.choose(language, for: side) }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(title.uppercased())
+                                .font(.system(size: 9, weight: .semibold))
+                                .tracking(0.8)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 6, weight: .bold))
+                        }
+                        .foregroundStyle(Theme.tertiary)
+                        .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                } else {
+                    Text(title.uppercased())
+                        .font(.system(size: 9, weight: .semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(Theme.tertiary)
+                }
                 Spacer(minLength: 4)
                 accessory()
             }
@@ -222,7 +255,7 @@ struct TranslatePane: View {
         // the one the code names. Falling back to the plain pair keeps the
         // "download a pack" answer available — and makes it true, instead of an
         // artefact of saying `en` and meaning `en-US` on a Mac holding `en-GB`.
-        let plain = Translator.route(for: text)
+        let plain = translator.routing(for: text)
         let route = await Translator.installedRoute(for: plain) ?? plain
         guard !Task.isCancelled else { return }
 
