@@ -2,33 +2,52 @@
 
 *English · [Русский](README.ru.md)*
 
-> **This is a fork of [akalikbergenov/cyclop](https://github.com/akalikbergenov/cyclop).**
-> Everything described below was designed and written by the original author —
-> this fork only adds a file converter to the shelf. If the app is useful to you,
-> star [the original](https://github.com/akalikbergenov/cyclop) first; the support
-> link lives there too.
->
-> **Added in this fork (0.7.0, based on 0.6.5):**
->
-> Right-clicking a shelf card hands the file to a converter. Native frameworks
-> throughout — ImageIO for pictures, PDFKit for pages, AVFoundation for video —
-> so there is nothing for anyone to install.
->
-> - **Pictures** — to JPEG, three compression rungs, images to PDF, stripping
->   location and capture date. The rung sizes are measured, not guessed: the file
->   is encoded three times and the results are shown, instead of a quality slider
->   whose number means nothing.
-> - **Video** — mov to mp4 by repackaging rather than re-encoding (seconds, not
->   minutes), three compression rungs capped at 1920 wide, audio out to m4a and
->   mp3. Video sizes are arithmetic rather than measurement, and say so with `≈`.
-> - **MP3** — macOS cannot write it, so LAME ships inside the bundle: 579 KB,
->   arm64 + x86_64, loaded with `dlopen`. Dynamically rather than statically,
->   which is exactly what keeps LGPL compatible with MIT. Its licence sits beside
->   it in `Contents/Frameworks`.
-> - **The translator** no longer claims a pack is missing when it is installed:
->   `Locale.Language("en")` maximises to `en-US` while the downloaded pack may be
->   `en-GB`. Languages can now be chosen, too — the column heading is the menu.
-> - Long work shows its progress on the card and is cancelled with the ✕.
+> **A fork of [akalikbergenov/cyclop](https://github.com/akalikbergenov/cyclop).**
+> The app itself — the notch as a working panel, the player, shelf, clipboard,
+> calendar, translator and teleprompter — is his design and his code. We took that
+> work and extended it for our own needs: we wanted to compress and convert files
+> without leaving the panel. If the app is useful to you, go
+> [to the original](https://github.com/akalikbergenov/cyclop) first — the star and
+> the support belong there.
+
+## Install in a minute
+
+1. Download **[Ledge-0.7.0.dmg](https://github.com/NurzhanMukhitov/ledge/releases/latest)**
+2. Open the image and drag `Ledge` into Applications
+3. macOS will block the first launch — expected, the app is not signed with a paid
+   Apple certificate. Allow it once:
+   **System Settings → Privacy & Security → "Open Anyway"**
+
+If you prefer the terminal, step three is one line:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Ledge.app
+```
+
+After that it lives in the notch: move the pointer to the cut-out at the top of
+the screen. Details and updating are under [Installation](#installation).
+
+## What we added
+
+Right-clicking a shelf card hands the file to a converter. Native frameworks
+throughout — ImageIO, PDFKit, AVFoundation — so there is nothing to install.
+
+- **Pictures.** To JPEG, three compression rungs, images to PDF, stripping
+  location and capture date. The rung sizes are measured, not guessed: the file is
+  encoded three times and the results shown, instead of a quality slider whose
+  number means nothing.
+- **Video.** mov to mp4 by repackaging rather than re-encoding — 477 MB in 2.9
+  seconds instead of minutes. Three compression rungs capped at 1920 wide: a
+  28-minute screen recording goes from 3.5 GB to 662 MB. Audio out to m4a and mp3.
+- **MP3.** macOS cannot write it, so LAME ships inside the bundle: 579 KB,
+  arm64 + x86_64, loaded with `dlopen`. Dynamically rather than statically, which
+  is what keeps LGPL compatible with MIT. Its licence sits beside it.
+- **The translator.** No longer claims a pack is missing when it is installed:
+  `Locale.Language("en")` maximises to `en-US` while the downloaded pack may be
+  `en-GB`. Languages can be chosen now, too — the column heading is the menu.
+- **Long work is visible.** The card appears at once, shows a percentage, and is
+  cancelled with the ✕.
+
 
 
 
