@@ -54,6 +54,15 @@ final class ShelfStore: ObservableObject {
     @Published private(set) var items: [ShelfItem] = []
     /// Cards picked for a group drag. Empty means "drag whatever is grabbed".
     @Published private(set) var selection: Set<UUID> = []
+    /// Whether the compression rungs are on screen waiting to be chosen from.
+    ///
+    /// Read by the panel, which must not fold while a question it asked is still
+    /// unanswered. The menu item that opens this list sits *below* the panel, so
+    /// the click that opens it leaves the pointer outside — and the panel then
+    /// started counting down to close before the list had finished appearing.
+    @Published private(set) var isChoosing = false
+
+    func setChoosing(_ value: Bool) { isChoosing = value }
 
     /// Encodes in flight, so a card removed mid-run takes its work with it.
     /// Fifteen minutes is long enough to change your mind, and a job nobody can

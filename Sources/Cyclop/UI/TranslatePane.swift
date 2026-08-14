@@ -218,7 +218,14 @@ struct TranslatePane: View {
         try? await Task.sleep(for: .milliseconds(320))
         guard !Task.isCancelled else { return }
 
-        let route = Translator.route(for: text)
+        // Ask for the regional variant this machine actually holds rather than
+        // the one the code names. Falling back to the plain pair keeps the
+        // "download a pack" answer available — and makes it true, instead of an
+        // artefact of saying `en` and meaning `en-US` on a Mac holding `en-GB`.
+        let plain = Translator.route(for: text)
+        let route = await Translator.installedRoute(for: plain) ?? plain
+        guard !Task.isCancelled else { return }
+
         if var current = configuration, current.source == route.source, current.target == route.target {
             // Same pair, different text. The modifier only re-runs when the
             // configuration changes, and invalidating is how one says "again".

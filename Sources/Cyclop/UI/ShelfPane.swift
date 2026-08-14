@@ -109,6 +109,10 @@ struct ShelfPane: View {
             }
         }
         .padding(.top, 2)
+        // Raised to the store rather than kept here: the panel decides whether
+        // to fold, and it cannot see a `@State` of one pane.
+        .onChange(of: compressing) { _, new in shelf.setChoosing(new != nil) }
+        .onDisappear { shelf.setChoosing(false) }
     }
 
     /// The one decision both signals feed: which frame holds the last known

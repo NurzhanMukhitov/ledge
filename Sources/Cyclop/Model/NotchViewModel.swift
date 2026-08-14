@@ -97,7 +97,14 @@ final class NotchViewModel: ObservableObject {
     /// the panel's edge*, so choosing from it always leaves — and the panel
     /// folding away underneath left the menu hanging over a closed notch,
     /// pointing at a card nobody could see any more.
-    var holdsOpen: Bool { (tab == .teleprompter && teleprompter.isRunning) || isMenuTracking }
+    /// The third case is the compression picker: the panel asked a question, and
+    /// folding away before it is answered makes the answer a race against a
+    /// timer. It ends the moment a rung is chosen or the list is dismissed.
+    var holdsOpen: Bool {
+        (tab == .teleprompter && teleprompter.isRunning)
+            || isMenuTracking
+            || (tab == .shelf && shelf.isChoosing)
+    }
 
     /// Whether any menu of this app's is on screen right now.
     ///

@@ -52,6 +52,41 @@ final class Translator: ObservableObject {
             : Route(source: english, target: russian)
     }
 
+    /// The same route, said in the regional variant this machine actually has.
+    ///
+    /// `Locale.Language("en")` maximises to `en-Latn-US`, so a Mac whose English
+    /// pack is the British one answers "not installed" for a pair it translates
+    /// perfectly well — and the panel then sent its owner off to download
+    /// something they already had. There is no such thing as a region-free pack:
+    /// every one of them is regional, so naming a language without a region is
+    /// naming a variant, and it may not be the downloaded one.
+    ///
+    /// The plain pair is tried first. If that fails, every regional variant the
+    /// framework lists is tried in turn, and only when none of them is installed
+    /// is the pack really missing.
+    static func installedRoute(for route: Route) async -> Route? {
+        let availability = LanguageAvailability()
+        if await availability.status(from: route.source, to: route.target) == .installed {
+            return route
+        }
+
+        let supported = await availability.supportedLanguages
+        func variants(of language: Locale.Language) -> [Locale.Language] {
+            guard let code = language.languageCode?.identifier else { return [language] }
+            let matching = supported.filter { $0.languageCode?.identifier == code }
+            return matching.isEmpty ? [language] : matching
+        }
+
+        for source in variants(of: route.source) {
+            for target in variants(of: route.target) {
+                if await availability.status(from: source, to: target) == .installed {
+                    return Route(source: source, target: target)
+                }
+            }
+        }
+        return nil
+    }
+
     func retry() {
         attempt += 1
     }
