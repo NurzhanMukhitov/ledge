@@ -37,14 +37,29 @@ struct ShelfPane: View {
                         // runs for minutes, and a task started inside the list
                         // would die the moment the list closed behind it.
                         Task {
-                            let produced: URL?
                             switch choice {
                             case .image(let variant):
-                                produced = await Task.detached { Converter.save(variant, from: source) }.value
+                                // Instant: the bytes were encoded to be shown in
+                                // the list, so there is nothing left to wait for.
+                                if let produced = await Task.detached(
+                                    operation: { Converter.save(variant, from: source) }
+                                ).value {
+                                    shelf.add([produced])
+                                }
                             case .video(let rung):
-                                produced = await VideoConverter.compress(source, to: rung)
+                                guard let out = VideoConverter.output(
+                                    for: source, prefix: rung.prefix, ext: "mp4"
+                                ) else { return }
+                                let id = shelf.reserve(out, determinate: true)
+                                shelf.attach(id, Task {
+                                    let done = await VideoConverter.compress(
+                                        source, to: rung, output: out
+                                    ) { fraction in
+                                        Task { @MainActor in shelf.advance(id, to: fraction) }
+                                    }
+                                    done ? shelf.complete(id) : shelf.abandon(id)
+                                })
                             }
-                            if let produced { shelf.add([produced]) }
                         }
                     },
                     onCancel: { self.compressing = nil }
@@ -197,9 +212,30 @@ private struct ShelfCard: View {
                     .monospacedDigit()
             }
         }
+        // Dimmed, not greyed out: the card is a placeholder for a file that
+        // does not exist yet, and it should read as one at a glance across a
+        // strip of real ones.
+        .opacity(item.isPending ? 0.45 : 1)
         .padding(.horizontal, 6)
         .padding(.vertical, 8)
         .frame(width: 86, height: 102)
+        .overlay(alignment: .bottom) {
+            // Only where the number is real. A bar that cannot move would be a
+            // decoration pretending to be an instrument.
+            if let progress = item.progress {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.hairline)
+                        Capsule().fill(Color.white.opacity(0.7))
+                            .frame(width: geo.size.width * progress)
+                    }
+                }
+                .frame(height: 2)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
+                .animation(Theme.contentAnimation, value: progress)
+            }
+        }
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(isSelected ? Color.white.opacity(0.18) : (isHovered ? Theme.surfaceHover : Theme.surface))
@@ -212,13 +248,18 @@ private struct ShelfCard: View {
         // Owns clicks and drags: a group drag needs one dragging item per file,
         // which SwiftUI's onDrag cannot express. It must stay *below* the close
         // button, otherwise it swallows every click aimed at it.
-        .overlay(
-            ShelfDragSource(
-                urls: { shelf.dragURLs(startingAt: item) },
-                onClick: { modifiers in shelf.select(item, modifiers: modifiers) },
-                onDoubleClick: { shelf.open(item) }
-            )
-        )
+        // No drag source while the file is being made: dragging it into Finder
+        // would hand over a path to nothing, and double-clicking would open the
+        // same nothing.
+        .overlay {
+            if !item.isPending {
+                ShelfDragSource(
+                    urls: { shelf.dragURLs(startingAt: item) },
+                    onClick: { modifiers in shelf.select(item, modifiers: modifiers) },
+                    onDoubleClick: { shelf.open(item) }
+                )
+            }
+        }
         .overlay(alignment: .topLeading) {
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
@@ -241,6 +282,10 @@ private struct ShelfCard: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contextMenu {
+            if item.isPending {
+                // Everything else acts on a file, and there is not one yet.
+                Button("Cancel") { shelf.remove(item) }
+            } else {
             Button("Copy") { shelf.copy(item) }
             Button("Open") { shelf.open(item) }
             Button("Show in Finder") { shelf.reveal(item) }
@@ -268,16 +313,23 @@ private struct ShelfCard: View {
                 Divider()
                 let url = item.url
                 if !VideoConverter.isMP4(url) {
-                    Button("To MP4") { produce { await VideoConverter.toMP4(url) } }
+                    Button("To MP4") {
+                        run(url, prefix: "MP4", ext: "mp4") { await VideoConverter.toMP4(url, to: $0) }
+                    }
                 }
                 Button("Compress…") { onCompress(url) }
-                Button("Audio (m4a)") { produce { await VideoConverter.extractM4A(url) } }
+                Button("Audio (m4a)") {
+                    run(url, prefix: localized("Audio"), ext: "m4a") { await VideoConverter.extractM4A(url, to: $0) }
+                }
                 if MP3Encoder.isAvailable {
-                    Button("Audio (mp3)") { produce { await VideoConverter.extractMP3(url) } }
+                    Button("Audio (mp3)") {
+                        run(url, prefix: localized("Audio"), ext: "mp3") { await VideoConverter.extractMP3(url, to: $0) }
+                    }
                 }
             }
             Divider()
             Button("Remove from Shelf") { shelf.remove(item) }
+            }
         }
         .animation(Theme.contentAnimation, value: isHovered)
         .animation(Theme.contentAnimation, value: isSelected)
@@ -289,17 +341,30 @@ private struct ShelfCard: View {
     /// long enough to be felt: on the main actor it would freeze the panel
     /// mid-hover, and the panel closes when the pointer leaves it.
     private func convert(_ work: @escaping @Sendable () -> URL?) {
-        produce { await Task.detached(priority: .userInitiated) { work() }.value }
-    }
-
-    /// The same landing, for work that is already asynchronous.
-    ///
-    /// AVFoundation hands back its own progress off the main actor, so video
-    /// needs no detaching — only somewhere to put the file when it is done.
-    private func produce(_ work: @escaping () async -> URL?) {
         Task {
-            guard let produced = await work() else { return }
+            guard let produced = await Task.detached(priority: .userInitiated, operation: work).value else { return }
             shelf.add([produced])
         }
+    }
+
+    /// Video work: the card goes up first, the file arrives into it.
+    ///
+    /// The name is settled before anything starts, because a card has to be
+    /// called something and because the result must not land on a name some
+    /// other conversion has taken in the meantime. Failure removes the card
+    /// rather than leaving it stuck: the file it named was never made.
+    private func run(
+        _ source: URL,
+        prefix: String,
+        ext: String,
+        _ work: @escaping (URL) async -> Bool
+    ) {
+        guard let out = VideoConverter.output(for: source, prefix: prefix, ext: ext) else { return }
+        // Remux and audio extraction happen inside one system call that does not
+        // report back, so their cards show an ellipsis rather than a number.
+        let id = shelf.reserve(out, determinate: false)
+        shelf.attach(id, Task {
+            await work(out) ? shelf.complete(id) : shelf.abandon(id)
+        })
     }
 }

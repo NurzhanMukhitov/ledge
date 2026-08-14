@@ -17,6 +17,18 @@ struct ShelfItem: Identifiable, Equatable {
     /// Filled when the shelf is looked at, not when it is loaded — reading it
     /// is a disk touch, and the shelf owes the user no prompts until then.
     var bytes: Int?
+    /// Whether the file is still being made.
+    ///
+    /// The card appears the moment the work starts rather than when it ends.
+    /// Compressing four gigabytes takes minutes, and the panel folds away as
+    /// soon as the pointer leaves it — without this, the answer to "is it doing
+    /// anything" was an empty shelf and no way to ask.
+    var isPending = false
+    /// How far along, where that can be known. Re-encoding counts frames against
+    /// a duration and knows exactly; a remux is handed to the system whole and
+    /// does not report back, so it shows an ellipsis rather than a number it
+    /// would have to invent.
+    var progress: Double?
     var name: String { url.lastPathComponent }
 
     /// "PNG · 1.2 MB" under the name.
@@ -27,6 +39,7 @@ struct ShelfItem: Identifiable, Equatable {
     /// line from flickering in on every visit to the tab.
     var meta: String {
         let kind = url.pathExtension.uppercased()
+        if isPending { return progress.map { "\(kind) · \(Int($0 * 100))%" } ?? "\(kind) · …" }
         guard let bytes else { return kind }
         return kind.isEmpty ? Converter.size(bytes) : "\(kind) · \(Converter.size(bytes))"
     }
@@ -41,6 +54,11 @@ final class ShelfStore: ObservableObject {
     @Published private(set) var items: [ShelfItem] = []
     /// Cards picked for a group drag. Empty means "drag whatever is grabbed".
     @Published private(set) var selection: Set<UUID> = []
+
+    /// Encodes in flight, so a card removed mid-run takes its work with it.
+    /// Fifteen minutes is long enough to change your mind, and a job nobody can
+    /// stop would keep a core busy for all of them.
+    private var jobs: [UUID: Task<Void, Never>] = [:]
 
     private let defaultsKey = "shelf.urls"
     /// Generous, because saved screenshots accumulate here and nothing is
@@ -88,7 +106,10 @@ final class ShelfStore: ObservableObject {
     /// interruption.
     func refreshFromDisk() {
         guard !items.isEmpty else { return }
-        let gone = Set(items.filter { Self.isGone($0.url) }.map(\.id))
+        // A pending card names a file that does not exist yet, on purpose. Asked
+        // about, it answers "gone" — so without this exception, opening the shelf
+        // during an encode would delete the very card reporting its progress.
+        let gone = Set(items.filter { !$0.isPending && Self.isGone($0.url) }.map(\.id))
         if !gone.isEmpty {
             items.removeAll { gone.contains($0.id) }
             selection.subtract(gone)
@@ -97,10 +118,56 @@ final class ShelfStore: ObservableObject {
         // Sizes ride along with the reachability check above: the file has just
         // been asked about, so asking for one more attribute costs nothing and
         // raises no prompt that was not already raised.
-        for index in items.indices {
+        for index in items.indices where !items[index].isPending {
             items[index].bytes = (try? items[index].url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
         }
-        items.forEach(loadThumbnail)
+        items.filter { !$0.isPending }.forEach(loadThumbnail)
+    }
+
+    // MARK: - Work in progress
+
+    /// A card for a file that is still being made.
+    ///
+    /// Returned by id rather than by index: the shelf reorders under it while
+    /// the work runs — a drop, another conversion finishing — and an index
+    /// would start pointing at somebody else's card halfway through.
+    func reserve(_ url: URL, determinate: Bool) -> UUID {
+        let item = ShelfItem(
+            url: url, icon: Self.icon(forName: url),
+            isPending: true, progress: determinate ? 0 : nil
+        )
+        items.insert(item, at: 0)
+        return item.id
+    }
+
+    func attach(_ id: UUID, _ task: Task<Void, Never>) {
+        jobs[id] = task
+    }
+
+    func advance(_ id: UUID, to progress: Double) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].progress = min(max(progress, 0), 1)
+    }
+
+    /// The file is real now: it gets its size, its preview, and a place in the
+    /// stored list it was deliberately kept out of until this moment.
+    func complete(_ id: UUID) {
+        jobs[id] = nil
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].isPending = false
+        items[index].progress = nil
+        items[index].bytes = (try? items[index].url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+        items[index].icon = NSWorkspace.shared.icon(forFile: items[index].url.path)
+        loadThumbnail(items[index])
+        persist()
+    }
+
+    /// Cancelled or failed. The card goes without a trace: it never named a
+    /// file that existed, so there is nothing to leave behind.
+    func abandon(_ id: UUID) {
+        jobs[id] = nil
+        items.removeAll { $0.id == id }
+        selection.remove(id)
     }
 
     /// Whether the file is actually gone, as opposed to merely out of reach.
@@ -159,6 +226,11 @@ final class ShelfStore: ObservableObject {
     }
 
     func remove(_ item: ShelfItem) {
+        // Removing a card that is still being made is how the work is called
+        // off — there is no other stop button, and the ✕ already means "I do
+        // not want this one".
+        jobs[item.id]?.cancel()
+        jobs[item.id] = nil
         items.removeAll { $0.id == item.id }
         selection.remove(item.id)
         persist()
@@ -231,7 +303,11 @@ final class ShelfStore: ObservableObject {
         NSWorkspace.shared.open(item.url)
     }
 
+    /// Pending cards are deliberately absent from what is stored. Their files do
+    /// not exist yet, and a crash mid-encode would otherwise leave a path in
+    /// defaults that resolves to nothing on the next launch — a card that can
+    /// never load and can only be removed by hand.
     private func persist() {
-        UserDefaults.standard.set(items.map(\.url.path), forKey: defaultsKey)
+        UserDefaults.standard.set(items.filter { !$0.isPending }.map(\.url.path), forKey: defaultsKey)
     }
 }

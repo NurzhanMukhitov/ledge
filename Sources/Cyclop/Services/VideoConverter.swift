@@ -7,6 +7,11 @@ import UniformTypeIdentifiers
 /// shipped — the hardware encoder it reaches is the same VideoToolbox one
 /// `ffmpeg` would have driven. The single exception is MP3, which macOS cannot
 /// write; `MP3Encoder` carries that.
+///
+/// Every entry point takes the destination it is to write and answers whether it
+/// managed. The name is decided before the work starts because the shelf shows a
+/// card for the file while it is still being made, and a card has to be called
+/// something.
 enum VideoConverter {
 
     static func isVideo(_ url: URL) -> Bool {
@@ -19,6 +24,10 @@ enum VideoConverter {
         return type.conforms(to: .mpeg4Movie)
     }
 
+    static func output(for url: URL, prefix: String, ext: String) -> URL? {
+        Converter.destination(named: url.deletingPathExtension().lastPathComponent, prefix: prefix, ext: ext)
+    }
+
     // MARK: - To MP4
 
     /// Repackaging, not re-encoding.
@@ -27,17 +36,26 @@ enum VideoConverter {
     /// what makes it awkward to send is the container, not the codec. Passthrough
     /// rewrites the container in seconds and loses nothing; re-encoding it to
     /// reach the same place would cost minutes and a generation of quality.
-    static func toMP4(_ url: URL) async -> URL? {
-        let asset = AVURLAsset(url: url)
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough),
-              let out = Converter.destination(named: base(url), prefix: "MP4", ext: "mp4")
-        else { return nil }
+    static func toMP4(_ url: URL, to out: URL) async -> Bool {
+        await export(AVURLAsset(url: url), preset: AVAssetExportPresetPassthrough, to: out, as: .mp4)
+    }
+
+    /// AAC in an m4a, straight out of AVFoundation.
+    static func extractM4A(_ url: URL, to out: URL) async -> Bool {
+        await export(AVURLAsset(url: url), preset: AVAssetExportPresetAppleM4A, to: out, as: .m4a)
+    }
+
+    /// Handed to the system whole, which is why neither of these reports a
+    /// percentage: the work happens inside one call that returns when it is done.
+    private static func export(_ asset: AVURLAsset, preset: String, to out: URL, as type: AVFileType) async -> Bool {
+        guard let session = AVAssetExportSession(asset: asset, presetName: preset) else { return false }
         do {
-            try await session.export(to: out, as: .mp4)
-            return out
+            try await session.export(to: out, as: type)
+            return true
         } catch {
-            NSLog("Cyclop: remux to mp4 failed: \(error.localizedDescription)")
-            return nil
+            NSLog("Cyclop: export failed: \(error.localizedDescription)")
+            try? FileManager.default.removeItem(at: out)
+            return false
         }
     }
 
@@ -87,20 +105,34 @@ enum VideoConverter {
         }
     }
 
-    static func compress(_ url: URL, to rung: Rung) async -> URL? {
+    /// Re-encodes, reporting how far along it is and stopping when told to.
+    ///
+    /// This is the one operation long enough to need both. A four-gigabyte
+    /// recording is minutes of work, and the panel folds away the moment the
+    /// pointer leaves it — so the progress goes to the card, which survives the
+    /// fold, and cancellation exists because minutes is long enough to change
+    /// your mind.
+    static func compress(
+        _ url: URL,
+        to rung: Rung,
+        output out: URL,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async -> Bool {
         let asset = AVURLAsset(url: url)
         guard let videoTrack = try? await asset.loadTracks(withMediaType: .video).first,
               let size = try? await videoTrack.load(.naturalSize),
-              let out = Converter.destination(named: base(url), prefix: rung.prefix, ext: "mp4"),
+              let duration = try? await asset.load(.duration),
               let reader = try? AVAssetReader(asset: asset),
               let writer = try? AVAssetWriter(outputURL: out, fileType: .mp4)
-        else { return nil }
+        else { return false }
+
+        let seconds = CMTimeGetSeconds(duration)
 
         let videoOutput = AVAssetReaderTrackOutput(
             track: videoTrack,
             outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
         )
-        guard reader.canAdd(videoOutput) else { return nil }
+        guard reader.canAdd(videoOutput) else { return false }
         reader.add(videoOutput)
 
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
@@ -115,7 +147,7 @@ enum VideoConverter {
         if let transform = try? await videoTrack.load(.preferredTransform) {
             videoInput.transform = transform
         }
-        guard writer.canAdd(videoInput) else { return nil }
+        guard writer.canAdd(videoInput) else { return false }
         writer.add(videoInput)
 
         // Audio is optional: a screen recording made without a microphone has
@@ -140,54 +172,101 @@ enum VideoConverter {
             }
         }
 
-        guard reader.startReading(), writer.startWriting() else { return nil }
+        guard reader.startReading(), writer.startWriting() else { return false }
         writer.startSession(atSourceTime: .zero)
 
-        await pump(videoOutput, into: videoInput)
-        if let (output, input) = audioPair {
-            await pump(output, into: input)
+        // Both tracks are drained at once, and this is not an optimisation.
+        // `AVAssetReader` decodes a shared window across all of its outputs: read
+        // one to the end while the other is untouched, and the window fills with
+        // audio nobody is collecting, the video output stops yielding, and the
+        // whole run stands still at nought per cent using no CPU at all. Short
+        // clips hide it — the window is big enough to hold the whole file — so
+        // it only appears on the recordings long enough to matter.
+        //
+        // Only the picture drives the bar. The soundtrack finishes in a fraction
+        // of the time, and letting it push the number about would read as the
+        // work restarting.
+        let report: @Sendable (Double) -> Void = { time in
+            guard seconds > 0 else { return }
+            progress(time / seconds)
         }
+        // Bound before the concurrent reads so neither task is reading a var
+        // the other could still be assigning.
+        let audio = audioPair
+        async let videoDone = pump(videoOutput, into: videoInput, reader: reader, report: report)
+        async let audioDone = pumpOptional(audio, reader: reader)
+        let videoFinished = await videoDone
+        let audioFinished = await audioDone
+        let finished = videoFinished && audioFinished
 
-        guard reader.status != .failed else {
+        guard finished, reader.status != .failed else {
             writer.cancelWriting()
             try? FileManager.default.removeItem(at: out)
-            return nil
+            return false
         }
         await writer.finishWriting()
-        return writer.status == .completed ? out : nil
+        guard writer.status == .completed else {
+            try? FileManager.default.removeItem(at: out)
+            return false
+        }
+        progress(1)
+        return true
+    }
+
+    /// The audio half of the pair, when there is one. A separate function only
+    /// because `async let` needs a call to start, not an optional to unwrap.
+    private static func pumpOptional(
+        _ pair: (AVAssetReaderTrackOutput, AVAssetWriterInput)?,
+        reader: AVAssetReader
+    ) async -> Bool {
+        guard let pair else { return true }
+        return await pump(pair.0, into: pair.1, reader: reader, report: nil)
     }
 
     /// Moves every sample of one track across, waiting when the writer is full.
+    /// Answers `false` if the run was cancelled.
     ///
     /// The wait is a sleep rather than a spin: this runs off the main actor for
     /// minutes at a time, and a busy loop would hold a core the encoder itself
     /// wants.
-    private static func pump(_ output: AVAssetReaderTrackOutput, into input: AVAssetWriterInput) async {
+    private static func pump(
+        _ output: AVAssetReaderTrackOutput,
+        into input: AVAssetWriterInput,
+        reader: AVAssetReader,
+        report: (@Sendable (Double) -> Void)?
+    ) async -> Bool {
+        var lastPercent = -1
         while let sample = output.copyNextSampleBuffer() {
+            if Task.isCancelled {
+                reader.cancelReading()
+                return false
+            }
             while !input.isReadyForMoreMediaData {
+                if Task.isCancelled {
+                    reader.cancelReading()
+                    return false
+                }
                 try? await Task.sleep(nanoseconds: 5_000_000)
             }
             input.append(sample)
+
+            if let report {
+                // Reported only when the whole number changes. At sixty frames
+                // a second this is otherwise sixty published updates a second,
+                // each one redrawing a card to say the same thing.
+                let time = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample))
+                let percent = Int(time)
+                if percent != lastPercent {
+                    lastPercent = percent
+                    report(time)
+                }
+            }
         }
         input.markAsFinished()
+        return true
     }
 
-    // MARK: - Audio
-
-    /// AAC in an m4a, straight out of AVFoundation.
-    static func extractM4A(_ url: URL) async -> URL? {
-        let asset = AVURLAsset(url: url)
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A),
-              let out = Converter.destination(named: base(url), prefix: localized("Audio"), ext: "m4a")
-        else { return nil }
-        do {
-            try await session.export(to: out, as: .m4a)
-            return out
-        } catch {
-            NSLog("Cyclop: audio export failed: \(error.localizedDescription)")
-            return nil
-        }
-    }
+    // MARK: - Audio to MP3
 
     /// PCM out of AVFoundation, MP3 out of LAME.
     ///
@@ -195,12 +274,12 @@ enum VideoConverter {
     /// raw samples here and handed over frame by frame rather than written to a
     /// temporary wav first — a two-hour recording would otherwise want a
     /// gigabyte of scratch space to produce sixty megabytes of output.
-    static func extractMP3(_ url: URL) async -> URL? {
+    static func extractMP3(_ url: URL, to out: URL) async -> Bool {
         let asset = AVURLAsset(url: url)
         guard MP3Encoder.isAvailable,
               let track = try? await asset.loadTracks(withMediaType: .audio).first,
               let reader = try? AVAssetReader(asset: asset)
-        else { return nil }
+        else { return false }
 
         let sampleRate = 44_100
         let channels = 2
@@ -213,15 +292,14 @@ enum VideoConverter {
             AVLinearPCMIsBigEndianKey: false,
             AVLinearPCMIsNonInterleaved: false,
         ])
-        guard reader.canAdd(output) else { return nil }
+        guard reader.canAdd(output) else { return false }
         reader.add(output)
 
         guard let encoder = MP3Encoder(sampleRate: sampleRate, channels: channels),
-              let out = Converter.destination(named: base(url), prefix: localized("Audio"), ext: "mp3"),
               reader.startReading(),
               FileManager.default.createFile(atPath: out.path, contents: nil),
               let file = try? FileHandle(forWritingTo: out)
-        else { return nil }
+        else { return false }
         defer { try? file.close() }
 
         while let sample = output.copyNextSampleBuffer() {
@@ -245,14 +323,10 @@ enum VideoConverter {
 
         guard reader.status != .failed else {
             try? FileManager.default.removeItem(at: out)
-            return nil
+            return false
         }
         let tail = encoder.finish()
         if !tail.isEmpty { file.write(tail) }
-        return out
-    }
-
-    private static func base(_ url: URL) -> String {
-        url.deletingPathExtension().lastPathComponent
+        return true
     }
 }
