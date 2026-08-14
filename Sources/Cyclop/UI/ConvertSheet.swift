@@ -1,36 +1,60 @@
 import SwiftUI
 
-/// The compression picker: three finished files, chosen by their weight.
+/// What the picker hands back once a rung is chosen. The work itself belongs to
+/// the pane: encoding a video outlives this view, and a `Task` started here
+/// would be cancelled the moment the list disappears.
+enum ConvertChoice {
+    case image(Converter.Variant)
+    case video(VideoConverter.Rung)
+}
+
+/// The compression picker: rungs chosen by weight rather than by setting.
 ///
-/// It shows results rather than a setting. A quality slider would say "72%",
-/// which tells nobody anything — the same number lands at 200 KB on a
-/// screenshot and 3 MB on a photograph. So the encoding is done first and the
-/// user picks from what came out.
+/// A quality slider would say "72%", which tells nobody anything — the same
+/// number lands at 200 KB on a screenshot and 3 MB on a photograph. So the
+/// answers are worked out first and the user picks from what came out.
 ///
-/// Sits over the shelf rather than in a window: the panel never activates, so
-/// a sheet or a modal has nowhere to appear.
+/// Pictures and video differ in one honest way. A picture is encoded three
+/// times up front, so its numbers are measured. A video would take minutes to
+/// encode three times, so its numbers are bitrate times duration — arithmetic,
+/// marked `≈`, and never dressed up as measurement.
+///
+/// Sits over the shelf rather than in a window: the panel never activates, so a
+/// sheet or a modal has nowhere to appear.
 struct ConvertSheet: View {
     let url: URL
-    let onPick: (Converter.Variant) -> Void
+    let onPick: (ConvertChoice) -> Void
     let onCancel: () -> Void
 
-    @State private var variants: [Converter.Variant] = []
-    @State private var hovered: UUID?
+    private struct Row: Identifiable {
+        let id = UUID()
+        let label: String
+        let size: String
+        let estimated: Bool
+        let choice: ConvertChoice
+    }
 
-    /// Read once, on appear. The shelf's rule is that disk access waits for the
-    /// user to ask, and opening this is the asking.
+    @State private var rows: [Row] = []
+    @State private var failed = false
+    @State private var hovered: UUID?
     @State private var original: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            if variants.isEmpty {
+            if failed {
+                Text(localized("Nothing to compress here."))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 12)
+            } else if rows.isEmpty {
                 ForEach(0..<3, id: \.self) { _ in
                     SkeletonBox(cornerRadius: 8).frame(height: 26)
                 }
             } else {
-                ForEach(variants) { variant in
-                    row(variant)
+                ForEach(rows) { row in
+                    self.row(row)
                 }
             }
             Spacer(minLength: 0)
@@ -38,7 +62,16 @@ struct ConvertSheet: View {
         .padding(.top, 2)
         .task {
             original = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
-            variants = await Converter.variants(for: url)
+            if VideoConverter.isVideo(url) {
+                rows = await VideoConverter.rungs(for: url).map {
+                    Row(label: $0.label, size: Converter.size($0.estimate), estimated: true, choice: .video($0))
+                }
+            } else {
+                rows = await Converter.variants(for: url).map {
+                    Row(label: $0.label, size: Converter.size($0.bytes), estimated: false, choice: .image($0))
+                }
+            }
+            failed = rows.isEmpty
         }
     }
 
@@ -64,18 +97,18 @@ struct ConvertSheet: View {
         }
     }
 
-    private func row(_ variant: Converter.Variant) -> some View {
-        Button { onPick(variant) } label: {
+    private func row(_ row: Row) -> some View {
+        Button { onPick(row.choice) } label: {
             HStack(spacing: 8) {
-                Text(variant.label)
+                Text(row.label)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white)
                 Spacer()
-                Text(Converter.size(variant.bytes))
+                Text(row.estimated ? "≈ \(row.size)" : row.size)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.secondary)
                     .monospacedDigit()
-                if let change = change(variant) {
+                if let change = change(row) {
                     Text(change)
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.tertiary)
@@ -88,11 +121,11 @@ struct ConvertSheet: View {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(hovered == variant.id ? Theme.surfaceHover : Theme.surface)
+                    .fill(hovered == row.id ? Theme.surfaceHover : Theme.surface)
             )
         }
         .buttonStyle(.plain)
-        .onHover { hovered = $0 ? variant.id : nil }
+        .onHover { hovered = $0 ? row.id : nil }
         .animation(Theme.contentAnimation, value: hovered)
     }
 
@@ -101,9 +134,14 @@ struct ConvertSheet: View {
     /// That happens on files already compressed once, and hiding it would be
     /// the one case where the picker lies: the row would read as a saving while
     /// handing over a bigger file.
-    private func change(_ variant: Converter.Variant) -> String? {
+    private func change(_ row: Row) -> String? {
         guard let original, original > 0 else { return nil }
-        let delta = Double(variant.bytes - original) / Double(original) * 100
+        let bytes: Int
+        switch row.choice {
+        case .image(let variant): bytes = variant.bytes
+        case .video(let rung): bytes = rung.estimate
+        }
+        let delta = Double(bytes - original) / Double(original) * 100
         let rounded = Int(delta.rounded())
         guard rounded != 0 else { return "0%" }
         return rounded < 0 ? "−\(-rounded)%" : "+\(rounded)%"

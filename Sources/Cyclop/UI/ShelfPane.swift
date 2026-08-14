@@ -30,9 +30,22 @@ struct ShelfPane: View {
             if let compressing {
                 ConvertSheet(
                     url: compressing,
-                    onPick: { variant in
-                        if let url = Converter.save(variant, from: compressing) { shelf.add([url]) }
+                    onPick: { choice in
+                        let source = compressing
                         self.compressing = nil
+                        // Owned by the pane, not by the picker: a video encode
+                        // runs for minutes, and a task started inside the list
+                        // would die the moment the list closed behind it.
+                        Task {
+                            let produced: URL?
+                            switch choice {
+                            case .image(let variant):
+                                produced = await Task.detached { Converter.save(variant, from: source) }.value
+                            case .video(let rung):
+                                produced = await VideoConverter.compress(source, to: rung)
+                            }
+                            if let produced { shelf.add([produced]) }
+                        }
                     },
                     onCancel: { self.compressing = nil }
                 )
@@ -247,6 +260,22 @@ private struct ShelfCard: View {
                 let url = item.url
                 Button("Remove Metadata") { convert { Converter.stripMetadata(url) } }
             }
+            // Video goes through AVFoundation, which every Mac already has —
+            // the same VideoToolbox encoder ffmpeg would have driven, without
+            // asking anyone to install it. MP3 is the one exception, and it is
+            // hidden rather than broken when the bundle was built without LAME.
+            if VideoConverter.isVideo(item.url) {
+                Divider()
+                let url = item.url
+                if !VideoConverter.isMP4(url) {
+                    Button("To MP4") { produce { await VideoConverter.toMP4(url) } }
+                }
+                Button("Compress…") { onCompress(url) }
+                Button("Audio (m4a)") { produce { await VideoConverter.extractM4A(url) } }
+                if MP3Encoder.isAvailable {
+                    Button("Audio (mp3)") { produce { await VideoConverter.extractMP3(url) } }
+                }
+            }
             Divider()
             Button("Remove from Shelf") { shelf.remove(item) }
         }
@@ -260,9 +289,16 @@ private struct ShelfCard: View {
     /// long enough to be felt: on the main actor it would freeze the panel
     /// mid-hover, and the panel closes when the pointer leaves it.
     private func convert(_ work: @escaping @Sendable () -> URL?) {
+        produce { await Task.detached(priority: .userInitiated) { work() }.value }
+    }
+
+    /// The same landing, for work that is already asynchronous.
+    ///
+    /// AVFoundation hands back its own progress off the main actor, so video
+    /// needs no detaching — only somewhere to put the file when it is done.
+    private func produce(_ work: @escaping () async -> URL?) {
         Task {
-            let produced = await Task.detached(priority: .userInitiated) { work() }.value
-            guard let produced else { return }
+            guard let produced = await work() else { return }
             shelf.add([produced])
         }
     }

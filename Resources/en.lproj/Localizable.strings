@@ -113,3 +113,10 @@
 "Compressed medium" = "Compressed medium";
 "Compressed strong" = "Compressed strong";
 "Images" = "Images";
+
+/* Video conversion. */
+"To MP4" = "To MP4";
+"Audio (m4a)" = "Audio (m4a)";
+"Audio (mp3)" = "Audio (mp3)";
+"Audio" = "Audio";
+"Nothing to compress here." = "Nothing to compress here.";

@@ -123,8 +123,8 @@ enum Converter {
               let type = CGImageSourceGetType(source) else { return nil }
 
         let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-        guard let out = free(named: base(url), prefix: localized("No metadata"), ext: ext),
-              let destination = CGImageDestinationCreateWithURL(out as CFURL, type, 1, nil)
+        guard let out = destination(named: base(url), prefix: localized("No metadata"), ext: ext),
+              let sink = CGImageDestinationCreateWithURL(out as CFURL, type, 1, nil)
         else { return nil }
 
         // `kCFNull` is how ImageIO is told to drop a dictionary rather than
@@ -143,8 +143,8 @@ enum Converter {
             options[kCGImagePropertyOrientation] = orientation
         }
 
-        CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { return nil }
+        CGImageDestinationAddImageFromSource(sink, source, 0, options as CFDictionary)
+        guard CGImageDestinationFinalize(sink) else { return nil }
         return out
     }
 
@@ -169,7 +169,7 @@ enum Converter {
         // folder's own word when there are several — "Screenshot 3 (PDF).pdf"
         // for a five-page document would name the wrong thing.
         let name = index == 1 ? base(urls[0]) : localized("Images")
-        guard let out = free(named: name, prefix: "PDF", ext: "pdf") else { return nil }
+        guard let out = destination(named: name, prefix: "PDF", ext: "pdf") else { return nil }
         guard document.write(to: out) else { return nil }
         return out
     }
@@ -248,7 +248,7 @@ enum Converter {
     /// Converting the same file twice is normal — trying two rungs of the
     /// ladder does it — so a collision is an expected event, not an error, and
     /// it must not overwrite the earlier answer the user may still be weighing.
-    private static func free(named name: String, prefix: String, ext: String) -> URL? {
+    static func destination(named name: String, prefix: String, ext: String) -> URL? {
         let stem = "\(prefix) — \(name)"
         var url = folder.appendingPathComponent("\(stem).\(ext)")
         var attempt = 2
@@ -260,7 +260,7 @@ enum Converter {
     }
 
     private static func write(_ data: Data, named name: String, prefix: String, ext: String) -> URL? {
-        guard let url = free(named: name, prefix: prefix, ext: ext) else { return nil }
+        guard let url = destination(named: name, prefix: prefix, ext: ext) else { return nil }
         do {
             try data.write(to: url, options: .atomic)
             return url

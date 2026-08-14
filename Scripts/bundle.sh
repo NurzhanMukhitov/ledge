@@ -63,6 +63,22 @@ for lproj in "$ROOT"/Resources/*.lproj; do
     echo "    $(basename "$lproj")"
 done
 
+# MP3 encoder. Ships inside the bundle because macOS has no MP3 encoder of its
+# own — `afconvert -f MPG3` answers `fmt?` — and whoever is handed this build
+# must not have to install anything. Loaded with dlopen at runtime, never linked:
+# LAME is LGPL and Cyclop is MIT, and dynamic loading is precisely what keeps
+# those two compatible. Its licence travels beside it, which the LGPL requires.
+if [ -f "$ROOT/Vendor/lame/libmp3lame.dylib" ]; then
+    echo "==> MP3 encoder (LAME)"
+    mkdir -p "$APP/Contents/Frameworks"
+    cp "$ROOT/Vendor/lame/libmp3lame.dylib" "$APP/Contents/Frameworks/"
+    cp "$ROOT/Vendor/lame/COPYING" "$APP/Contents/Frameworks/libmp3lame-COPYING.txt"
+    echo "    $(lipo -archs "$APP/Contents/Frameworks/libmp3lame.dylib")"
+else
+    # Not fatal: the app runs without it and simply does not offer MP3.
+    echo "==> MP3 encoder: Vendor/lame/libmp3lame.dylib отсутствует, пункт mp3 будет скрыт" >&2
+fi
+
 # Now Playing helper. Built here rather than by SwiftPM because it is not linked
 # into the app: it is loaded into /usr/bin/perl at runtime. See helper.m.
 echo "==> building Now Playing helper"

@@ -112,3 +112,10 @@
 "Compressed medium" = "Сжато среднее";
 "Compressed strong" = "Сжато сильное";
 "Images" = "Картинки";
+
+/* Конвертация видео. */
+"To MP4" = "В MP4";
+"Audio (m4a)" = "Аудио (m4a)";
+"Audio (mp3)" = "Аудио (mp3)";
+"Audio" = "Аудио";
+"Nothing to compress here." = "Тут нечего сжимать.";
