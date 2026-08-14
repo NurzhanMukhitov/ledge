@@ -271,7 +271,14 @@ final class NotchController {
         guard let vm = viewModel, vm.isOpen != open else { return }
         // Closing for any reason ends the take: the pin is a consequence of the
         // script moving, so the script stops with the panel.
-        if !open { vm.teleprompter.suspend() }
+        // A menu is the same: it was opened on a card in this panel, and the
+        // panel is going. Reaching here at all means the pointer was overruled
+        // — sleep, a space change, the menu bar — because while it is only the
+        // pointer asking, `holdsOpen` has already refused.
+        if !open {
+            vm.teleprompter.suspend()
+            vm.cancelMenu()
+        }
         openGeneration += 1
         closeActiveRectWork?.cancel()
 

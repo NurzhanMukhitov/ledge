@@ -98,3 +98,17 @@
 "Paste the script here" = "Вставьте сюда сценарий";
 "Ready" = "Готово";
 "Done" = "Готово";
+
+/* Конвертация карточки с полки в другой файл. */
+"To JPEG" = "В JPEG";
+"Compress…" = "Сжать…";
+"To PDF" = "В PDF";
+"Remove Metadata" = "Убрать метаданные";
+"Light" = "Лёгкое";
+"Medium" = "Среднее";
+"Strong" = "Сильное";
+"No metadata" = "Без метаданных";
+"Compressed light" = "Сжато лёгкое";
+"Compressed medium" = "Сжато среднее";
+"Compressed strong" = "Сжато сильное";
+"Images" = "Картинки";

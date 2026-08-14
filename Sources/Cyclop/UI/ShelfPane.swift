@@ -19,15 +19,35 @@ struct ShelfPane: View {
     @State private var hoverPoint: CGPoint?
     @State private var frames: [UUID: CGRect] = [:]
 
+    /// The file whose compression rungs are on screen. Non-nil replaces the
+    /// strip rather than covering it: the panel is 159 points tall under the
+    /// notch, and a picker floating over the cards would have to shrink to fit
+    /// beside them for no gain — nobody drags a card while choosing a rung.
+    @State private var compressing: URL?
+
     var body: some View {
         VStack(spacing: 0) {
-            if shelf.items.isEmpty {
+            if let compressing {
+                ConvertSheet(
+                    url: compressing,
+                    onPick: { variant in
+                        if let url = Converter.save(variant, from: compressing) { shelf.add([url]) }
+                        self.compressing = nil
+                    },
+                    onCancel: { self.compressing = nil }
+                )
+            } else if shelf.items.isEmpty {
                 dropHint
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(shelf.items) { item in
-                            ShelfCard(item: item, shelf: shelf, isHovered: hoveredID == item.id)
+                            ShelfCard(
+                                item: item,
+                                shelf: shelf,
+                                isHovered: hoveredID == item.id,
+                                onCompress: { compressing = $0 }
+                            )
                                 .background(
                                     GeometryReader { geo in
                                         Color.clear.preference(
@@ -125,8 +145,16 @@ private struct ShelfCard: View {
     /// Handed down from the pane, which is the one place that can know it
     /// correctly when cards move under a stationary pointer.
     let isHovered: Bool
+    /// Raised to the pane: the rungs need the whole body to list themselves in,
+    /// which a card 86 points wide does not have.
+    let onCompress: (URL) -> Void
 
     private var isSelected: Bool { shelf.isSelected(item) }
+
+    /// What a conversion would act on: the selection when this card belongs to
+    /// it, otherwise this card alone — the same rule dragging follows, so the
+    /// menu and the mouse never disagree about what "this" means.
+    private var scope: [URL] { shelf.dragURLs(startingAt: item) }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -138,16 +166,27 @@ private struct ShelfCard: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 68, height: 40)
-            Text(item.name)
-                .font(.system(size: 9))
-                .foregroundStyle(Theme.secondary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .frame(height: 24, alignment: .top)
+            // The name and what it is are one block, tight together, so the
+            // gap that separates them from the picture stays the only gap on
+            // the card — three evenly spaced rows read as three unrelated
+            // things rather than a picture with a caption.
+            VStack(spacing: 1) {
+                Text(item.name)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(height: 24, alignment: .top)
+                Text(item.meta)
+                    .font(.system(size: 8))
+                    .foregroundStyle(Theme.tertiary)
+                    .lineLimit(1)
+                    .monospacedDigit()
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 8)
-        .frame(width: 86, height: 92)
+        .frame(width: 86, height: 102)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(isSelected ? Color.white.opacity(0.18) : (isHovered ? Theme.surfaceHover : Theme.surface))
@@ -192,10 +231,39 @@ private struct ShelfCard: View {
             Button("Copy") { shelf.copy(item) }
             Button("Open") { shelf.open(item) }
             Button("Show in Finder") { shelf.reveal(item) }
+            // Converting lives in the menu rather than on the card: it is a
+            // thing done to a file now and then, not a thing looked at, and
+            // every pixel spent on it would come off the preview — which is
+            // what makes the shelf readable at a glance.
+            if Converter.isImage(item.url) {
+                Divider()
+                if !Converter.isJPEG(item.url) {
+                    let url = item.url
+                    Button("To JPEG") { convert { Converter.toJPEG(url) } }
+                }
+                Button("Compress…") { onCompress(item.url) }
+                let images = scope.filter(Converter.isImage)
+                Button("To PDF") { convert { Converter.imagesToPDF(images) } }
+                let url = item.url
+                Button("Remove Metadata") { convert { Converter.stripMetadata(url) } }
+            }
             Divider()
             Button("Remove from Shelf") { shelf.remove(item) }
         }
         .animation(Theme.contentAnimation, value: isHovered)
         .animation(Theme.contentAnimation, value: isSelected)
+    }
+
+    /// Runs the conversion off the main actor and lands the result on the shelf.
+    ///
+    /// Detached because decoding and re-encoding a 40-megapixel photo takes
+    /// long enough to be felt: on the main actor it would freeze the panel
+    /// mid-hover, and the panel closes when the pointer leaves it.
+    private func convert(_ work: @escaping @Sendable () -> URL?) {
+        Task {
+            let produced = await Task.detached(priority: .userInitiated) { work() }.value
+            guard let produced else { return }
+            shelf.add([produced])
+        }
     }
 }

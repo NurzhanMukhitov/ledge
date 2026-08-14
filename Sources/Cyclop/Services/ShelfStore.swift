@@ -14,7 +14,22 @@ struct ShelfItem: Identifiable, Equatable {
     /// QuickLook renders one — a shelf of identical PNG icons is useless when
     /// what it holds is screenshots.
     var icon: NSImage
+    /// Filled when the shelf is looked at, not when it is loaded — reading it
+    /// is a disk touch, and the shelf owes the user no prompts until then.
+    var bytes: Int?
     var name: String { url.lastPathComponent }
+
+    /// "PNG · 1.2 MB" under the name.
+    ///
+    /// The type comes off the extension, so it is there from the first frame;
+    /// the size arrives a moment later with the rest of the disk read. Showing
+    /// the half that is free rather than waiting for both is what keeps the
+    /// line from flickering in on every visit to the tab.
+    var meta: String {
+        let kind = url.pathExtension.uppercased()
+        guard let bytes else { return kind }
+        return kind.isEmpty ? Converter.size(bytes) : "\(kind) · \(Converter.size(bytes))"
+    }
 
     static func == (lhs: ShelfItem, rhs: ShelfItem) -> Bool { lhs.url == rhs.url }
 }
@@ -79,6 +94,12 @@ final class ShelfStore: ObservableObject {
             selection.subtract(gone)
             persist()
         }
+        // Sizes ride along with the reachability check above: the file has just
+        // been asked about, so asking for one more attribute costs nothing and
+        // raises no prompt that was not already raised.
+        for index in items.indices {
+            items[index].bytes = (try? items[index].url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+        }
         items.forEach(loadThumbnail)
     }
 
@@ -99,7 +120,14 @@ final class ShelfStore: ObservableObject {
 
     func add(_ urls: [URL]) {
         for url in urls where !items.contains(where: { $0.url == url }) {
-            let item = ShelfItem(url: url, icon: NSWorkspace.shared.icon(forFile: url.path))
+            // A dropped or freshly converted file is already being read for its
+            // icon, so its size comes over in the same breath — a card that
+            // arrives complete never has to correct itself a moment later.
+            let item = ShelfItem(
+                url: url,
+                icon: NSWorkspace.shared.icon(forFile: url.path),
+                bytes: (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+            )
             items.insert(item, at: 0)
             loadThumbnail(item)
         }

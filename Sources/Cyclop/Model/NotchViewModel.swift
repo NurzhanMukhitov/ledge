@@ -90,7 +90,37 @@ final class NotchViewModel: ObservableObject {
     /// narrow as it can be. It applies to one tab, only while the script is
     /// actually moving, and it ends three ways that need no explaining: the
     /// script runs out, Escape, or a click anywhere outside the panel.
-    var holdsOpen: Bool { tab == .teleprompter && teleprompter.isRunning }
+    ///
+    /// A tracking menu is the second such case, and it is the same shape as a
+    /// drag: an interaction the panel itself started, which then legitimately
+    /// takes the pointer off the panel. A context menu opens *downward, past
+    /// the panel's edge*, so choosing from it always leaves — and the panel
+    /// folding away underneath left the menu hanging over a closed notch,
+    /// pointing at a card nobody could see any more.
+    var holdsOpen: Bool { (tab == .teleprompter && teleprompter.isRunning) || isMenuTracking }
+
+    /// Whether any menu of this app's is on screen right now.
+    ///
+    /// Read off AppKit rather than raised by the pane that opened it: SwiftUI's
+    /// `contextMenu` builds and presents its own `NSMenu` and tells nobody, so
+    /// the notification is the only place the fact exists.
+    @Published private(set) var isMenuTracking = false
+    /// Held weakly and only while it tracks — a menu that has closed is not
+    /// something to keep, and cancelling a closed menu is not an operation.
+    private weak var trackingMenu: NSMenu?
+
+    /// Takes the menu down with the panel.
+    ///
+    /// `holdsOpen` covers the pointer, which is what closes the panel almost
+    /// always. It does not cover the rest — the screen sleeping, the space
+    /// changing, the menu bar item being clicked — and in those the panel goes
+    /// whether a menu is open or not. Then the menu must go too, or it is left
+    /// standing over nothing.
+    func cancelMenu() {
+        trackingMenu?.cancelTrackingWithoutAnimation()
+        trackingMenu = nil
+        isMenuTracking = false
+    }
 
     /// Whether the panel currently holds the keyboard.
     ///
@@ -125,6 +155,28 @@ final class NotchViewModel: ObservableObject {
         self.snippets = SnippetStore()
         self.notes = NoteStore()
         self.teleprompter = TeleprompterStore()
+
+        // Posted for every menu the app puts up, which is exactly the set that
+        // should pin the panel: a context menu on a shelf card, and the status
+        // item's own menu. Nothing here distinguishes them, because nothing
+        // here needs to.
+        NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)
+            .sink { [weak self] note in
+                let menu = note.object as? NSMenu
+                MainActor.assumeIsolated {
+                    self?.trackingMenu = menu
+                    self?.isMenuTracking = true
+                }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.trackingMenu = nil
+                    self?.isMenuTracking = false
+                }
+            }
+            .store(in: &cancellables)
 
         // The panel header reads through to the stores — counters, the source
         // name, the equalizer. Nested ObservableObjects do not propagate on

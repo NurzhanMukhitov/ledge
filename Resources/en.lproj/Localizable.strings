@@ -99,3 +99,17 @@
 "Paste the script here" = "Paste the script here";
 "Ready" = "Ready";
 "Done" = "Done";
+
+/* Converting a shelf card into another file. */
+"To JPEG" = "To JPEG";
+"Compress…" = "Compress…";
+"To PDF" = "To PDF";
+"Remove Metadata" = "Remove Metadata";
+"Light" = "Light";
+"Medium" = "Medium";
+"Strong" = "Strong";
+"No metadata" = "No metadata";
+"Compressed light" = "Compressed light";
+"Compressed medium" = "Compressed medium";
+"Compressed strong" = "Compressed strong";
+"Images" = "Images";
