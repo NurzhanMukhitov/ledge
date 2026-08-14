@@ -3,8 +3,8 @@ import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
 extension NSPasteboard.PasteboardType {
-    /// Marker Cyclop puts on pasteboard writes of its own.
-    static let cyclopInternal = NSPasteboard.PasteboardType("com.cyclop.internal")
+    /// Marker Ledge puts on pasteboard writes of its own.
+    static let ledgeInternal = NSPasteboard.PasteboardType("com.ledge.internal")
 }
 
 struct ShelfItem: Identifiable, Equatable {
@@ -83,7 +83,7 @@ final class ShelfStore: ObservableObject {
     /// a read — and this used to run at launch, for every card, whether or not
     /// anyone was going to open the shelf. One file dragged in from Downloads
     /// months ago meant a dialog on every cold start, arriving with no visible
-    /// cause: the panel was not even open. Cyclop promises no permissions until
+    /// cause: the panel was not even open. Ledge promises no permissions until
     /// the calendar is opened, and this quietly broke that promise.
     ///
     /// So the icon comes from the file *name* — the extension is enough to
@@ -297,7 +297,7 @@ final class ShelfStore: ObservableObject {
         pasteboard.writeObjects([item.url as NSURL])
         // Tells ClipboardStore this change came from us, so a copied screenshot
         // is not saved to disk a second time.
-        pasteboard.setData(Data(), forType: .cyclopInternal)
+        pasteboard.setData(Data(), forType: .ledgeInternal)
         if let type = UTType(filenameExtension: item.url.pathExtension),
            type.conforms(to: .image),
            let data = try? Data(contentsOf: item.url) {

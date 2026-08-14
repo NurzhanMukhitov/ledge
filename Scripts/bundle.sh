@@ -1,34 +1,34 @@
 #!/bin/bash
-# Builds Cyclop.app without Xcode: SwiftPM produces the binary, this script
+# Builds Ledge.app without Xcode: SwiftPM produces the binary, this script
 # assembles the bundle around it and ad-hoc signs it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="${1:-release}"
-APP="$ROOT/build/Cyclop.app"
+APP="$ROOT/build/Ledge.app"
 VERSION="$(sed -n 's/^VERSION=//p' "$ROOT/Scripts/version" 2>/dev/null || echo 0.1.0)"
 
 echo "==> swift build -c $CONFIG"
 swift build -c "$CONFIG" --package-path "$ROOT"
-BIN="$(swift build -c "$CONFIG" --package-path "$ROOT" --show-bin-path)/Cyclop"
+BIN="$(swift build -c "$CONFIG" --package-path "$ROOT" --show-bin-path)/Ledge"
 
 echo "==> assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Cyclop"
+cp "$BIN" "$APP/Contents/MacOS/Ledge"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Cyclop</string>
+    <key>CFBundleName</key><string>Ledge</string>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleLocalizations</key>
     <array><string>en</string><string>ru</string></array>
-    <key>CFBundleDisplayName</key><string>Cyclop</string>
-    <key>CFBundleIdentifier</key><string>com.cyclop.app</string>
-    <key>CFBundleExecutable</key><string>Cyclop</string>
+    <key>CFBundleDisplayName</key><string>Ledge</string>
+    <key>CFBundleIdentifier</key><string>com.ledge.app</string>
+    <key>CFBundleExecutable</key><string>Ledge</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
@@ -39,11 +39,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSSupportsAutomaticTermination</key><false/>
     <key>NSSupportsSuddenTermination</key><false/>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Cyclop читает название текущего трека и управляет воспроизведением в Apple Music и Spotify.</string>
+    <string>Ledge читает название текущего трека и управляет воспроизведением в Apple Music и Spotify.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Cyclop показывает ближайшие встречи и кнопку подключения к ним.</string>
+    <string>Ledge показывает ближайшие встречи и кнопку подключения к ним.</string>
     <key>NSCalendarsUsageDescription</key>
-    <string>Cyclop показывает ближайшие встречи и кнопку подключения к ним.</string>
+    <string>Ledge показывает ближайшие встречи и кнопку подключения к ним.</string>
     <key>NSHumanReadableCopyright</key><string>MIT License</string>
 </dict>
 </plist>
@@ -66,7 +66,7 @@ done
 # MP3 encoder. Ships inside the bundle because macOS has no MP3 encoder of its
 # own — `afconvert -f MPG3` answers `fmt?` — and whoever is handed this build
 # must not have to install anything. Loaded with dlopen at runtime, never linked:
-# LAME is LGPL and Cyclop is MIT, and dynamic loading is precisely what keeps
+# LAME is LGPL and Ledge is MIT, and dynamic loading is precisely what keeps
 # those two compatible. Its licence travels beside it, which the LGPL requires.
 if [ -f "$ROOT/Vendor/lame/libmp3lame.dylib" ]; then
     echo "==> MP3 encoder (LAME)"
@@ -85,8 +85,8 @@ echo "==> building Now Playing helper"
 clang -dynamiclib -fobjc-arc -O2 \
     -mmacosx-version-min=15.0 \
     -framework Foundation \
-    -o "$APP/Contents/Resources/libcyclopmedia.dylib" \
-    "$ROOT/Sources/CyclopMediaHelper/helper.m"
+    -o "$APP/Contents/Resources/libledgemedia.dylib" \
+    "$ROOT/Sources/LedgeMediaHelper/helper.m"
 
 echo "==> ad-hoc signing"
 # Расширенные атрибуты снимаются первыми. iCloud вешает на файлы

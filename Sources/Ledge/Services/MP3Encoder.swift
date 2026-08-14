@@ -8,7 +8,7 @@ import Foundation
 /// so LAME rides inside the bundle.
 ///
 /// Loaded with `dlopen` rather than linked, and that is a licence decision
-/// before it is a technical one. LAME is LGPL, Cyclop is MIT; dynamic loading
+/// before it is a technical one. LAME is LGPL, Ledge is MIT; dynamic loading
 /// keeps them compatible, static linking would not. It also buys graceful
 /// degradation: a build assembled without the library still runs, and simply
 /// does not offer MP3.

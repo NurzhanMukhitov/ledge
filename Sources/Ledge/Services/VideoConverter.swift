@@ -53,7 +53,7 @@ enum VideoConverter {
             try await session.export(to: out, as: type)
             return true
         } catch {
-            NSLog("Cyclop: export failed: \(error.localizedDescription)")
+            NSLog("Ledge: export failed: \(error.localizedDescription)")
             try? FileManager.default.removeItem(at: out)
             return false
         }

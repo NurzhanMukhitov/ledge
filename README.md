@@ -1,17 +1,46 @@
-# Cyclop
+# Ledge
 
 *English · [Русский](README.ru.md)*
+
+> **This is a fork of [akalikbergenov/cyclop](https://github.com/akalikbergenov/cyclop).**
+> Everything described below was designed and written by the original author —
+> this fork only adds a file converter to the shelf. If the app is useful to you,
+> star [the original](https://github.com/akalikbergenov/cyclop) first; the support
+> link lives there too.
+>
+> **Added in this fork (0.7.0, based on 0.6.5):**
+>
+> Right-clicking a shelf card hands the file to a converter. Native frameworks
+> throughout — ImageIO for pictures, PDFKit for pages, AVFoundation for video —
+> so there is nothing for anyone to install.
+>
+> - **Pictures** — to JPEG, three compression rungs, images to PDF, stripping
+>   location and capture date. The rung sizes are measured, not guessed: the file
+>   is encoded three times and the results are shown, instead of a quality slider
+>   whose number means nothing.
+> - **Video** — mov to mp4 by repackaging rather than re-encoding (seconds, not
+>   minutes), three compression rungs capped at 1920 wide, audio out to m4a and
+>   mp3. Video sizes are arithmetic rather than measurement, and say so with `≈`.
+> - **MP3** — macOS cannot write it, so LAME ships inside the bundle: 579 KB,
+>   arm64 + x86_64, loaded with `dlopen`. Dynamically rather than statically,
+>   which is exactly what keeps LGPL compatible with MIT. Its licence sits beside
+>   it in `Contents/Frameworks`.
+> - **The translator** no longer claims a pack is missing when it is installed:
+>   `Locale.Language("en")` maximises to `en-US` while the downloaded pack may be
+>   `en-GB`. Languages can now be chosen, too — the column heading is the menu.
+> - Long work shows its progress on the card and is cancelled with the ✕.
+
+
 
 The MacBook notch as a working tool. A native SwiftUI/AppKit app: invisible at
 rest, and on hover it unfolds downwards into a panel with a player, a shelf for
 files, clipboard history and your next meetings.
 
-[![build](https://github.com/akalikbergenov/cyclop/actions/workflows/build.yml/badge.svg)](https://github.com/akalikbergenov/cyclop/actions/workflows/build.yml)
-[![Buy Me a Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-%E2%98%95-FFDD00?style=flat-square&labelColor=000000)](https://buymeacoffee.com/akalikbergenov)
+[![build](https://github.com/NurzhanMukhitov/ledge/actions/workflows/build.yml/badge.svg)](https://github.com/NurzhanMukhitov/ledge/actions/workflows/build.yml)
 
-![The Cyclop panel](docs/panel.png)
+![The Ledge panel](docs/panel.png)
 
-**[Download the latest version](https://github.com/akalikbergenov/cyclop/releases/latest)** —
+**[Download the latest version](https://github.com/NurzhanMukhitov/ledge/releases/latest)** —
 macOS 15 or newer. The first launch needs one permission granted by hand,
 [here is how](#installation).
 
@@ -19,7 +48,7 @@ macOS 15 or newer. The first launch needs one permission granted by hand,
 0.0 % CPU at rest  ·  ≈40 MB + 14 MB helper  ·  2.1 MB bundle  ·  one permission, and only on a button
 ```
 
-The track in the screenshot is playing in a browser tab — Cyclop reads it from
+The track in the screenshot is playing in a browser tab — Ledge reads it from
 macOS itself, with no permissions and nothing to configure in the browser. How
 that works is below.
 
@@ -30,7 +59,7 @@ that works is below.
 | **Music** | Artwork, track, artist, a scrubber that seeks, prev / play-pause / next. The source is **anything**: a player, a browser tab, any app macOS itself can see |
 | **Shelf** | Drag files into the notch and they stay there until needed; drag a card out and the file goes wherever it is dropped. A click selects a card, ⌘-click selects several, and then the whole group is dragged. A screenshot taken to the clipboard is saved as a file and lands here too — including one taken on an iPhone, if you copy it there |
 | **Clipboard** | The last 40 copies; a click puts an entry back on the clipboard |
-| **Snippets** | A hand-kept list of what you are tired of retyping: an address, a phone number, an email. Added with a button in the panel, removed with the cross on a card; a click puts the text on the clipboard. The same list lives in `~/Library/Application Support/Cyclop/snippets.json` and can be edited there instead |
+| **Snippets** | A hand-kept list of what you are tired of retyping: an address, a phone number, an email. Added with a button in the panel, removed with the cross on a card; a click puts the text on the clipboard. The same list lives in `~/Library/Application Support/Ledge/snippets.json` and can be edited there instead |
 | **Calendar** | The next meeting a week ahead: how long until it starts and a button that joins the call — Zoom, Meet, Teams and others. The rest of the meetings as a list |
 | **Translate** | Type on the left, the translation appears on the right — by itself, offline, using macOS's own facilities. English goes to Russian, Russian to English; the direction comes from the script the text is written in. macOS does not preinstall language packs, so the first time you have to download one: System Settings → General → Language & Region → "Translation Languages…" |
 | **Teleprompter** | A script that scrolls under the camera at a speed you set. The notch is the one place on the screen a teleprompter belongs: reading happens right beside the lens, so on the recording the eyes stay on the camera instead of travelling to a window below it. The panel holds itself open while the text is moving — reading a script means not touching the trackpad |
@@ -53,10 +82,10 @@ area at the top centre of the screen as one.
 ## Building
 
 ```bash
-git clone https://github.com/akalikbergenov/cyclop.git
-cd cyclop
+git clone https://github.com/NurzhanMukhitov/ledge.git
+cd ledge
 ./Scripts/bundle.sh          # swift build + assemble the .app + ad-hoc sign
-open build/Cyclop.app
+open build/Ledge.app
 ```
 
 The icon is generated in code, with no graphics editor involved:
@@ -67,19 +96,19 @@ swift Scripts/make-icon.swift "$PWD/Resources/AppIcon.icns"
 
 ## Installation
 
-Open `Cyclop-<version>.dmg` and drag the app into Applications.
+Open `Ledge-<version>.dmg` and drag the app into Applications.
 
 The first launch **will not work**: macOS will say the app cannot be verified.
 That is expected — the image is ad-hoc signed, without a Developer ID, and not
 notarised. It has to be allowed once:
 
-**System Settings → Privacy & Security**, where a line about Cyclop and an
+**System Settings → Privacy & Security**, where a line about Ledge and an
 **"Open Anyway"** button will be waiting near the bottom.
 
 Or, if one command is easier:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Cyclop.app
+xattr -dr com.apple.quarantine /Applications/Ledge.app
 ```
 
 In macOS 15 the familiar Control-click route no longer works for this case, so it
@@ -99,7 +128,7 @@ subscription. To hear about updates: the **Watch** button at the top right →
 ./Scripts/dmg.sh
 ```
 
-Puts `build/Cyclop-<version>.dmg` next to the app, with an `/Applications`
+Puts `build/Ledge-<version>.dmg` next to the app, with an `/Applications`
 shortcut inside. The version number comes from `Scripts/version`.
 
 ### Cutting a release
@@ -120,7 +149,7 @@ into the app's `Info.plist`, into the image name and into the tag, so they canno
 drift apart. The script also refuses to run on a dirty tree, on unpushed commits,
 or when the tag already exists.
 
-Built images live on the [releases page](https://github.com/akalikbergenov/cyclop/releases) —
+Built images live on the [releases page](https://github.com/NurzhanMukhitov/ledge/releases) —
 that is the link to hand to people instead of a file.
 
 ## Permissions
@@ -130,7 +159,7 @@ Accessibility, no Screen Recording, and needs nothing configured in the browser.
 The pointer position is read through `NSEvent.mouseLocation`, the clipboard
 through the public `NSPasteboard`, Now Playing through a helper (see below).
 
-Calendar access is the only permission Cyclop ever requests. It is needed by the
+Calendar access is the only permission Ledge ever requests. It is needed by the
 Calendar tab alone, and the system dialog appears neither at launch nor when the
 tab is opened, but on an explicit press of a button on a screen that explains
 why. Don't use the calendar and the app stays without permissions entirely.
@@ -226,7 +255,7 @@ lives in a file:
 ]
 ```
 
-`~/Library/Application Support/Cyclop/snippets.json`, where `label` may be left
+`~/Library/Application Support/Ledge/snippets.json`, where `label` may be left
 out. "Show Snippets File" in the menu bar opens it in Finder.
 
 Both sides can add to it: the button in the panel and your hands in the file. A
@@ -261,7 +290,7 @@ short-lived to deserve naming as a separate step. Esc hands the keyboard back
 and never clears the text — this is the one text in the panel that cannot be
 re-derived from anywhere.
 
-Everything is written to `~/Library/Application Support/Cyclop/notes.json` a
+Everything is written to `~/Library/Application Support/Ledge/notes.json` a
 moment after the typing pauses, not on every keystroke; unlike the snippets file
 it is not meant to be edited by hand, and it is plain text. The right column is
 not decoration: the six icons on the left already fill the panel's height, and a
@@ -356,12 +385,12 @@ either: it makes it into the signature, but the process is killed at startup
 The way around needs neither SIP disabled nor anything set in a browser.
 `/usr/bin/perl` is an Apple platform binary (`Platform identifier=16`) that the
 daemon trusts, and it is signed without library validation, meaning it can load a
-foreign library. `Sources/CyclopMediaHelper/helper.m` compiles into
-`libcyclopmedia.dylib`, is loaded into perl through `DynaLoader` and from there
+foreign library. `Sources/LedgeMediaHelper/helper.m` compiles into
+`libledgemedia.dylib`, is loaded into perl through `DynaLoader` and from there
 receives the daemon's full answer:
 
 ```
-$ perl -e 'use DynaLoader; DynaLoader::dl_load_file($ARGV[0], 0x01); sleep 4' libcyclopmedia.dylib
+$ perl -e 'use DynaLoader; DynaLoader::dl_load_file($ARGV[0], 0x01); sleep 4' libledgemedia.dylib
 14 keys: Title=Sen, Artist=Yerbol Narimanuly, Album=Sen,
          Duration=202.39, ElapsedTime=131.23, ArtworkData=<10681 bytes JPEG>
 ```
@@ -415,7 +444,7 @@ no leaks: `leaks` against the live process finds zero.
   them from the system one day. The helper survives exactly until that moment.
 - The shelf references files rather than copying them: move the original and the
   card disappears on the next launch. The exception is clipboard screenshots,
-  which are saved into `~/Pictures/Cyclop` and are never deleted automatically,
+  which are saved into `~/Pictures/Ledge` and are never deleted automatically,
   even when the card leaves the shelf. Only the user clears that folder: the
   “Clear Screenshots Folder” menu bar item sends its contents to the Trash —
   a hand too, not a schedule.
@@ -435,7 +464,7 @@ no leaks: `leaks` against the live process finds zero.
 ## Layout
 
 ```
-Sources/Cyclop
+Sources/Ledge
 ├── main.swift                 entry point, .accessory
 ├── App/
 │   ├── AppDelegate.swift      menu bar icon, launch at login
@@ -461,7 +490,7 @@ Sources/Cyclop
 │   └── CalendarStore.swift    EventKit: next meetings and the call link
 └── UI/                        NotchShape, tab panes, theme
 
-Sources/CyclopMediaHelper
+Sources/LedgeMediaHelper
 └── helper.m                   dylib for /usr/bin/perl: MediaRemote -> JSON
 ```
 
@@ -470,7 +499,6 @@ Sources/CyclopMediaHelper
 The app is free — no subscriptions, no ads, no data collection — and will stay
 that way. If it turned out useful and you feel like supporting it:
 
-**[☕ Buy Me a Coffee](https://buymeacoffee.com/akalikbergenov)**
 
 Special thanks to everyone who showed up in the first days and made the app
 better: [@DontTrustMexD](https://github.com/DontTrustMexD),

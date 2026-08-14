@@ -27,10 +27,10 @@ jobs:
 
       - name: Проверить, что в бандле лежит то, что нужно
         run: |
-          APP=build/Cyclop.app
+          APP=build/Ledge.app
           VERSION="$(sed -n 's/^VERSION=//p' Scripts/version)"
-          test -x "$APP/Contents/MacOS/Cyclop"
-          test -f "$APP/Contents/Resources/libcyclopmedia.dylib"
+          test -x "$APP/Contents/MacOS/Ledge"
+          test -f "$APP/Contents/Resources/libledgemedia.dylib"
           # Локализации кладет тот же скрипт, и молча потерять их проще всего:
           # приложение с пропавшей таблицей запускается и выглядит целым.
           test -f "$APP/Contents/Resources/en.lproj/Localizable.strings"

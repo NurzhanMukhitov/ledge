@@ -86,7 +86,7 @@ struct SettingsPane: View {
                         try SMAppService.mainApp.unregister()
                     }
                 } catch {
-                    NSLog("Cyclop: launch-at-login failed: \(error.localizedDescription)")
+                    NSLog("Ledge: launch-at-login failed: \(error.localizedDescription)")
                 }
                 launchAtLogin = SMAppService.mainApp.status == .enabled
             }

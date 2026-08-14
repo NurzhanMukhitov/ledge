@@ -4,7 +4,7 @@
 import AppKit
 
 let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "AppIcon.icns"
-let iconset = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Cyclop.iconset")
+let iconset = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Ledge.iconset")
 try? FileManager.default.removeItem(at: iconset)
 try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 
@@ -56,7 +56,7 @@ func draw(size s: CGFloat) -> NSBitmapImageRep {
     ctx.setFillColor(CGColor(red: 0.02, green: 0.02, blue: 0.03, alpha: 1))
     ctx.fillPath()
 
-    // One eye — the cyclops.
+    // One eye — the ledges.
     let cx = body.midX, cy = body.midY - 40 * k
     let ew = 460 * k, eh = 250 * k
     let lens = CGMutablePath()

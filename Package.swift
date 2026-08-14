@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "Cyclop",
+    name: "Ledge",
     // macOS 15 for Translation.framework, which the translate tab runs on.
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "Cyclop", targets: ["Cyclop"])
+        .executable(name: "Ledge", targets: ["Ledge"])
     ],
     targets: [
         .executableTarget(
-            name: "Cyclop",
-            path: "Sources/Cyclop",
+            name: "Ledge",
+            path: "Sources/Ledge",
             swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]

@@ -265,7 +265,7 @@ enum Converter {
             try data.write(to: url, options: .atomic)
             return url
         } catch {
-            NSLog("Cyclop: failed to write converted file: \(error.localizedDescription)")
+            NSLog("Ledge: failed to write converted file: \(error.localizedDescription)")
             return nil
         }
     }

@@ -7,6 +7,6 @@ MainActor.assumeIsolated {
     app.delegate = delegate
     app.setActivationPolicy(.accessory)
     // Keep the delegate alive for the lifetime of the process.
-    objc_setAssociatedObject(app, "cyclop.delegate", delegate, .OBJC_ASSOCIATION_RETAIN)
+    objc_setAssociatedObject(app, "ledge.delegate", delegate, .OBJC_ASSOCIATION_RETAIN)
     app.run()
 }

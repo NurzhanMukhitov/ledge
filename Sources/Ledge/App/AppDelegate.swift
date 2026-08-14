@@ -24,13 +24,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(
             systemSymbolName: "eye.fill",
-            accessibilityDescription: "Cyclop"
+            accessibilityDescription: "Ledge"
         )
         item.button?.image?.isTemplate = true
 
         let menu = NSMenu()
         menu.delegate = self
-        menu.addItem(withTitle: "Cyclop \(Bundle.main.shortVersion)", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "Ledge \(Bundle.main.shortVersion)", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
 
         let toggle = NSMenuItem(

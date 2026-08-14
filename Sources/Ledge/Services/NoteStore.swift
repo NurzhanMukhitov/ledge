@@ -91,7 +91,7 @@ final class NoteStore: ObservableObject {
         do {
             try JSONEncoder().encode(notes).write(to: Self.file, options: .atomic)
         } catch {
-            NSLog("Cyclop: cannot write notes.json: \(error.localizedDescription)")
+            NSLog("Ledge: cannot write notes.json: \(error.localizedDescription)")
         }
     }
 }
