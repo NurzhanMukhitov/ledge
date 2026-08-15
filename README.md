@@ -18,14 +18,19 @@
    Apple certificate. Allow it once:
    **System Settings → Privacy & Security → "Open Anyway"**
 
-If you prefer the terminal, step three is one line:
+If you prefer the terminal, step three is one line — but **drag the app into
+Applications first**, or there is nothing for it to act on:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Ledge.app
+xattr -cr /Applications/Ledge.app
 ```
 
+It **prints nothing**, and that is success. It does not launch the app either:
+open `Ledge` normally afterwards.
+
 After that it lives in the notch: move the pointer to the cut-out at the top of
-the screen. Details and updating are under [Installation](#installation).
+the screen. Details and updating are under [Installation](#installation),
+removal under [Uninstalling](#uninstalling).
 
 ## What we added
 
@@ -127,7 +132,7 @@ notarised. It has to be allowed once:
 Or, if one command is easier:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Ledge.app
+xattr -cr /Applications/Ledge.app
 ```
 
 In macOS 15 the familiar Control-click route no longer works for this case, so it
@@ -170,6 +175,40 @@ or when the tag already exists.
 
 Built images live on the [releases page](https://github.com/NurzhanMukhitov/ledge/releases) —
 that is the link to hand to people instead of a file.
+
+## Uninstalling
+
+Three levels, from "out of sight" to "no trace left". Pick one.
+
+**1. Just remove the app.** Drag `Ledge` from Applications to the Trash.
+Settings and files stay behind, so reinstalling picks up where you left off.
+
+**2. Remove settings too.** The above, plus:
+
+```bash
+rm -rf ~/Library/Application\ Support/Ledge
+defaults delete com.ledge.app
+```
+
+That is where snippets, notes, the teleprompter script and every switch live:
+what the shelf is holding, the chosen language pair, the privacy mode.
+
+**3. Erase everything.** In addition to the above:
+
+```bash
+rm -rf ~/Pictures/Ledge
+```
+
+⚠️ **These are your files**, not app data: screenshots saved off the clipboard and
+everything you converted. Look inside before deleting — the app never clears this
+folder by itself, for exactly this reason.
+
+**Launch at login** needs no separate step: it is registered with the system, and
+macOS drops the entry when the app goes. To check anyway —
+System Settings → General → Login Items.
+
+**Calendar access**, if you granted it, is revoked in
+System Settings → Privacy & Security → Calendars.
 
 ## Permissions
 
