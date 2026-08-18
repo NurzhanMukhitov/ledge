@@ -159,15 +159,41 @@ enum VideoConverter {
         var outSize = CGSize(width: abs(size.width), height: abs(size.height))
         var composed = false
 
-        if let maxWidth = rung.maxWidth,
-           let composition = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset),
-           composition.renderSize.width > CGFloat(maxWidth) {
-            let base = composition.renderSize
-            let scale = CGFloat(maxWidth) / base.width
+        let transform = (try? await videoTrack.load(.preferredTransform)) ?? .identity
+        // What the frame measures once its rotation is applied. A portrait clip
+        // is stored landscape with a quarter turn attached, so its natural size
+        // is not the shape anybody sees.
+        let display = CGRect(origin: .zero, size: size).applying(transform).standardized.size
+
+        if let maxWidth = rung.maxWidth, display.width > CGFloat(maxWidth) {
+            let scale = CGFloat(maxWidth) / display.width
             // H.264 wants even dimensions; an odd one is refused outright.
-            outSize = CGSize(width: (base.width * scale / 2).rounded() * 2,
-                             height: (base.height * scale / 2).rounded() * 2)
+            outSize = CGSize(width: (display.width * scale / 2).rounded() * 2,
+                             height: (display.height * scale / 2).rounded() * 2)
+
+            // Built by hand rather than from `videoComposition(withPropertiesOf:)`.
+            // That convenience hands back layer instructions carrying the track's
+            // own transform, and shrinking `renderSize` underneath them does not
+            // shrink the picture — it shrinks the canvas the picture is drawn on
+            // at full size, so everything past the new edge is simply cut away.
+            // The result had the right dimensions and the wrong content: a
+            // top-left crop of the original, which is exactly what it looked
+            // like. The scale has to go into the transform, so it goes here.
+            let composition = AVMutableVideoComposition()
             composition.renderSize = outSize
+            let fps = (try? await videoTrack.load(.nominalFrameRate)) ?? 30
+            composition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, fps.rounded())))
+
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(start: .zero, duration: duration)
+            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
+            // Rotation first, then scale: `preferredTransform` already places the
+            // frame the right way up, and scaling that carries its placement with
+            // it. The other order puts a rotated picture outside the canvas.
+            layer.setTransform(transform.concatenating(CGAffineTransform(scaleX: scale, y: scale)), at: .zero)
+            instruction.layerInstructions = [layer]
+            composition.instructions = [instruction]
+
             let output = AVAssetReaderVideoCompositionOutput(videoTracks: [videoTrack], videoSettings: pixels)
             output.videoComposition = composition
             videoOutput = output
