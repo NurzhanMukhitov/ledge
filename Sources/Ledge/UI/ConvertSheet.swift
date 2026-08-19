@@ -4,8 +4,11 @@ import SwiftUI
 /// the pane: encoding a video outlives this view, and a `Task` started here
 /// would be cancelled the moment the list disappears.
 enum ConvertChoice {
-    case image(Converter.Variant)
-    case video(VideoConverter.Rung)
+    /// The source travels with the choice: a rung chosen once applies to every
+    /// selected file, and each result has to be named after the file it came
+    /// from rather than after whichever card happened to be clicked.
+    case image(Converter.Variant, from: URL)
+    case video(VideoConverter.Rung, from: URL)
 }
 
 /// The compression picker: rungs chosen by weight rather than by setting.
@@ -22,22 +25,27 @@ enum ConvertChoice {
 /// Sits over the shelf rather than in a window: the panel never activates, so a
 /// sheet or a modal has nowhere to appear.
 struct ConvertSheet: View {
-    let url: URL
-    let onPick: (ConvertChoice) -> Void
+    let urls: [URL]
+    let onPick: ([ConvertChoice]) -> Void
     let onCancel: () -> Void
 
     private struct Row: Identifiable {
         let id = UUID()
         let label: String
-        let size: String
+        /// Summed across the selection. One rung is one decision, so it has to
+        /// show one number — three files listed separately would be three
+        /// decisions to make and no way to make them together.
+        let bytes: Int
         let estimated: Bool
-        let choice: ConvertChoice
+        let choices: [ConvertChoice]
     }
 
     @State private var rows: [Row] = []
     @State private var failed = false
     @State private var hovered: UUID?
     @State private var original: Int?
+
+    private var single: URL? { urls.count == 1 ? urls.first : nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -60,24 +68,52 @@ struct ConvertSheet: View {
             Spacer(minLength: 0)
         }
         .padding(.top, 2)
-        .task {
-            original = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
-            if VideoConverter.isVideo(url) {
-                rows = await VideoConverter.rungs(for: url).map {
-                    Row(label: $0.label, size: Converter.size($0.estimate), estimated: true, choice: .video($0))
-                }
-            } else {
-                rows = await Converter.variants(for: url).map {
-                    Row(label: $0.label, size: Converter.size($0.bytes), estimated: false, choice: .image($0))
-                }
-            }
-            failed = rows.isEmpty
+        .task { await load() }
+    }
+
+    /// One ladder for the whole selection: every file is measured or estimated,
+    /// and the rungs are matched up by position so that "Strong" means the same
+    /// rung for all of them. Files that yield nothing — a video with no track —
+    /// drop out, and the shortest ladder sets the length so no rung is missing
+    /// an answer for some file.
+    private func load() async {
+        original = urls.reduce(0) { sum, url in
+            sum + ((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
         }
+
+        var ladders: [[(label: String, bytes: Int, choice: ConvertChoice)]] = []
+        var estimated = false
+        for url in urls {
+            if VideoConverter.isVideo(url) {
+                estimated = true
+                let rungs = await VideoConverter.rungs(for: url)
+                ladders.append(rungs.map { ($0.label, $0.estimate, .video($0, from: url)) })
+            } else {
+                let variants = await Converter.variants(for: url)
+                ladders.append(variants.map { ($0.label, $0.bytes, .image($0, from: url)) })
+            }
+        }
+        ladders.removeAll(where: \.isEmpty)
+
+        guard let depth = ladders.map(\.count).min(), depth > 0 else {
+            failed = true
+            return
+        }
+        rows = (0..<depth).map { index in
+            let step = ladders.map { $0[index] }
+            return Row(
+                label: step[0].label,
+                bytes: step.reduce(0) { $0 + $1.bytes },
+                estimated: estimated,
+                choices: step.map(\.choice)
+            )
+        }
+        failed = rows.isEmpty
     }
 
     private var header: some View {
         HStack(spacing: 6) {
-            Text(url.lastPathComponent)
+            Text(single?.lastPathComponent ?? localized("%d files", urls.count))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Theme.secondary)
                 .lineLimit(1)
@@ -98,13 +134,13 @@ struct ConvertSheet: View {
     }
 
     private func row(_ row: Row) -> some View {
-        Button { onPick(row.choice) } label: {
+        Button { onPick(row.choices) } label: {
             HStack(spacing: 8) {
                 Text(row.label)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white)
                 Spacer()
-                Text(row.estimated ? "≈ \(row.size)" : row.size)
+                Text(row.estimated ? "≈ \(Converter.size(row.bytes))" : Converter.size(row.bytes))
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.secondary)
                     .monospacedDigit()
@@ -136,12 +172,7 @@ struct ConvertSheet: View {
     /// handing over a bigger file.
     private func change(_ row: Row) -> String? {
         guard let original, original > 0 else { return nil }
-        let bytes: Int
-        switch row.choice {
-        case .image(let variant): bytes = variant.bytes
-        case .video(let rung): bytes = rung.estimate
-        }
-        let delta = Double(bytes - original) / Double(original) * 100
+        let delta = Double(row.bytes - original) / Double(original) * 100
         let rounded = Int(delta.rounded())
         guard rounded != 0 else { return "0%" }
         return rounded < 0 ? "−\(-rounded)%" : "+\(rounded)%"

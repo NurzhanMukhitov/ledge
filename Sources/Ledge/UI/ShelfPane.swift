@@ -23,33 +23,37 @@ struct ShelfPane: View {
     /// strip rather than covering it: the panel is 159 points tall under the
     /// notch, and a picker floating over the cards would have to shrink to fit
     /// beside them for no gain — nobody drags a card while choosing a rung.
-    @State private var compressing: URL?
+    @State private var compressing: [URL] = []
 
     var body: some View {
         VStack(spacing: 0) {
-            if let compressing {
+            if !compressing.isEmpty {
                 ConvertSheet(
-                    url: compressing,
-                    onPick: { choice in
-                        let source = compressing
-                        self.compressing = nil
+                    urls: compressing,
+                    onPick: { choices in
+                        self.compressing = []
                         // Owned by the pane, not by the picker: a video encode
                         // runs for minutes, and a task started inside the list
                         // would die the moment the list closed behind it.
-                        Task {
+                        // Every file gets its own task. Videos then encode
+                        // side by side rather than in a queue, and one that
+                        // fails does not take the rest of the batch with it.
+                        for choice in choices {
                             switch choice {
-                            case .image(let variant):
+                            case .image(let variant, let source):
                                 // Instant: the bytes were encoded to be shown in
                                 // the list, so there is nothing left to wait for.
-                                if let produced = await Task.detached(
-                                    operation: { Converter.save(variant, from: source) }
-                                ).value {
-                                    shelf.add([produced])
+                                Task {
+                                    if let produced = await Task.detached(
+                                        operation: { Converter.save(variant, from: source) }
+                                    ).value {
+                                        shelf.add([produced])
+                                    }
                                 }
-                            case .video(let rung):
+                            case .video(let rung, let source):
                                 guard let out = VideoConverter.output(
                                     for: source, prefix: rung.prefix, ext: "mp4"
-                                ) else { return }
+                                ) else { continue }
                                 let id = shelf.reserve(out, determinate: true)
                                 shelf.attach(id, Task {
                                     let done = await VideoConverter.compress(
@@ -62,7 +66,7 @@ struct ShelfPane: View {
                             }
                         }
                     },
-                    onCancel: { self.compressing = nil }
+                    onCancel: { self.compressing = [] }
                 )
             } else if shelf.items.isEmpty {
                 dropHint
@@ -111,7 +115,7 @@ struct ShelfPane: View {
         .padding(.top, 2)
         // Raised to the store rather than kept here: the panel decides whether
         // to fold, and it cannot see a `@State` of one pane.
-        .onChange(of: compressing) { _, new in shelf.setChoosing(new != nil) }
+        .onChange(of: compressing) { _, new in shelf.setChoosing(!new.isEmpty) }
         .onDisappear { shelf.setChoosing(false) }
     }
 
@@ -178,8 +182,9 @@ private struct ShelfCard: View {
     /// correctly when cards move under a stationary pointer.
     let isHovered: Bool
     /// Raised to the pane: the rungs need the whole body to list themselves in,
-    /// which a card 86 points wide does not have.
-    let onCompress: (URL) -> Void
+    /// which a card 86 points wide does not have. Takes the whole selection —
+    /// one rung chosen once applies to every file in it.
+    let onCompress: ([URL]) -> Void
 
     private var isSelected: Bool { shelf.isSelected(item) }
 
@@ -297,37 +302,48 @@ private struct ShelfCard: View {
             // thing done to a file now and then, not a thing looked at, and
             // every pixel spent on it would come off the preview — which is
             // what makes the shelf readable at a glance.
-            if Converter.isImage(item.url) {
+            let images = scope.filter(Converter.isImage)
+            if !images.isEmpty {
                 Divider()
-                if !Converter.isJPEG(item.url) {
-                    let url = item.url
-                    Button("To JPEG") { convert { Converter.toJPEG(url) } }
+                if images.contains(where: { !Converter.isJPEG($0) }) {
+                    Button(count(localized("To JPEG"), images.filter { !Converter.isJPEG($0) }.count)) {
+                        batch(images.filter { !Converter.isJPEG($0) }) { Converter.toJPEG($0) }
+                    }
                 }
-                Button("Compress…") { onCompress(item.url) }
-                let images = scope.filter(Converter.isImage)
+                Button(count(localized("Compress…"), images.count)) { onCompress(images) }
+                // The one operation that is not per-file: several pictures make
+                // one document, which is the point of it.
                 Button("To PDF") { convert { Converter.imagesToPDF(images) } }
-                let url = item.url
-                Button("Remove Metadata") { convert { Converter.stripMetadata(url) } }
+                Button(count(localized("Remove Metadata"), images.count)) {
+                    batch(images) { Converter.stripMetadata($0) }
+                }
             }
             // Video goes through AVFoundation, which every Mac already has —
             // the same VideoToolbox encoder ffmpeg would have driven, without
             // asking anyone to install it. MP3 is the one exception, and it is
             // hidden rather than broken when the bundle was built without LAME.
-            if VideoConverter.isVideo(item.url) {
+            let videos = scope.filter(VideoConverter.isVideo)
+            if !videos.isEmpty {
                 Divider()
-                let url = item.url
-                if !VideoConverter.isMP4(url) {
-                    Button("To MP4") {
-                        run(url, prefix: "MP4", ext: "mp4") { await VideoConverter.toMP4(url, to: $0) }
+                let unpacked = videos.filter { !VideoConverter.isMP4($0) }
+                if !unpacked.isEmpty {
+                    Button(count(localized("To MP4"), unpacked.count)) {
+                        for url in unpacked {
+                            run(url, prefix: "MP4", ext: "mp4") { await VideoConverter.toMP4(url, to: $0) }
+                        }
                     }
                 }
-                Button("Compress…") { onCompress(url) }
-                Button("Audio (m4a)") {
-                    run(url, prefix: localized("Audio"), ext: "m4a") { await VideoConverter.extractM4A(url, to: $0) }
+                Button(count(localized("Compress…"), videos.count)) { onCompress(videos) }
+                Button(count(localized("Audio (m4a)"), videos.count)) {
+                    for url in videos {
+                        run(url, prefix: localized("Audio"), ext: "m4a") { await VideoConverter.extractM4A(url, to: $0) }
+                    }
                 }
                 if MP3Encoder.isAvailable {
-                    Button("Audio (mp3)") {
-                        run(url, prefix: localized("Audio"), ext: "mp3") { await VideoConverter.extractMP3(url, to: $0) }
+                    Button(count(localized("Audio (mp3)"), videos.count)) {
+                        for url in videos {
+                            run(url, prefix: localized("Audio"), ext: "mp3") { await VideoConverter.extractMP3(url, to: $0) }
+                        }
                     }
                 }
             }
@@ -344,6 +360,20 @@ private struct ShelfCard: View {
     /// Detached because decoding and re-encoding a 40-megapixel photo takes
     /// long enough to be felt: on the main actor it would freeze the panel
     /// mid-hover, and the panel closes when the pointer leaves it.
+    /// "To JPEG (3)" — the count only appears when there is more than one, so
+    /// the common case reads as it always did and the batch case cannot be
+    /// mistaken for it.
+    private func count(_ title: String, _ n: Int) -> String {
+        n > 1 ? "\(title) (\(n))" : title
+    }
+
+    /// The same operation over every selected file, each on its own task.
+    private func batch(_ urls: [URL], _ work: @escaping @Sendable (URL) -> URL?) {
+        for url in urls {
+            convert { work(url) }
+        }
+    }
+
     private func convert(_ work: @escaping @Sendable () -> URL?) {
         Task {
             guard let produced = await Task.detached(priority: .userInitiated, operation: work).value else { return }
