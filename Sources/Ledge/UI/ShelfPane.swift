@@ -324,13 +324,40 @@ private struct ShelfCard: View {
             // the same VideoToolbox encoder ffmpeg would have driven, without
             // asking anyone to install it. MP3 is the one exception, and it is
             // hidden rather than broken when the bundle was built without LAME.
-            // A format the system cannot open gets one line saying so, instead of
-            // a menu full of actions that would silently do nothing.
+            // Formats macOS will not open. The bundled tool reads them, so they
+            // get their own short menu rather than an apology — and once one has
+            // been turned into MP4, everything else in this menu applies to it.
             let unreadable = scope.filter { VideoConverter.looksLikeVideo($0) && !VideoConverter.isReadable($0) }
-            if !unreadable.isEmpty, scope.count == unreadable.count {
+            if !unreadable.isEmpty {
                 Divider()
-                Button(localized("macOS does not open %@", unreadable[0].pathExtension.uppercased())) {}
-                    .disabled(true)
+                if Rescue.isAvailable {
+                    Button(count(localized("To MP4"), unreadable.count)) {
+                        for url in unreadable {
+                            rescue(url, prefix: "MP4", ext: "mp4") { out, report in
+                                await Rescue.toMP4(url, to: out, progress: report)
+                            }
+                        }
+                    }
+                    Button(count(localized("To M4A"), unreadable.count)) {
+                        for url in unreadable {
+                            rescue(url, prefix: localized("Audio"), ext: "m4a") { out, report in
+                                await Rescue.toM4A(url, to: out, progress: report)
+                            }
+                        }
+                    }
+                    if MP3Encoder.isAvailable {
+                        Button(count(localized("To MP3"), unreadable.count)) {
+                            for url in unreadable {
+                                rescue(url, prefix: localized("Audio"), ext: "mp3") { out, report in
+                                    await Rescue.toMP3(url, to: out, progress: report)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Button(localized("macOS does not open %@", unreadable[0].pathExtension.uppercased())) {}
+                        .disabled(true)
+                }
             }
 
             // Sound with no picture. Extraction already works on any asset that
@@ -407,6 +434,29 @@ private struct ShelfCard: View {
         for url in urls {
             convert { work(url) }
         }
+    }
+
+    /// Same landing as `run`, for work that reports its own progress.
+    ///
+    /// These are the slow ones — a whole file decoded and re-encoded by an
+    /// outside process — so the card carries a real percentage rather than an
+    /// ellipsis, and the ✕ reaches the process itself.
+    private func rescue(
+        _ source: URL,
+        prefix: String,
+        ext: String,
+        _ work: @escaping (URL, @escaping @Sendable (Double) -> Void) async -> Bool
+    ) {
+        guard let out = VideoConverter.output(for: source, prefix: prefix, ext: ext) else { return }
+        let id = shelf.reserve(out, determinate: true)
+        shelf.attach(id, Task {
+            let done = await work(out) { fraction in
+                Task { @MainActor in shelf.advance(id, to: fraction) }
+            }
+            if done { shelf.complete(id) }
+            else if Task.isCancelled { shelf.abandon(id) }
+            else { shelf.fail(id) }
+        })
     }
 
     private func convert(_ work: @escaping @Sendable () -> URL?) {

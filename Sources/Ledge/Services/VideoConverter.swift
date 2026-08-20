@@ -48,6 +48,11 @@ enum VideoConverter {
     /// Sound with no picture: mp3, wav, flac, m4a and the rest. These were
     /// missing from the menu entirely — the shelf offered nothing for a file
     /// AVFoundation reads perfectly well.
+    /// A format the system cannot open, which the bundled tool can.
+    static func needsRescue(_ url: URL) -> Bool {
+        looksLikeVideo(url) && !isReadable(url) && Rescue.isAvailable
+    }
+
     static func isAudio(_ url: URL) -> Bool {
         guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
         return type.conforms(to: .audio) && isReadable(url)

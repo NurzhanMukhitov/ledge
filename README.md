@@ -12,7 +12,7 @@
 
 ## Install in a minute
 
-1. Download **[Ledge-0.7.0.dmg](https://github.com/NurzhanMukhitov/ledge/releases/latest)**
+1. Download **[Ledge-0.8.0.dmg](https://github.com/NurzhanMukhitov/ledge/releases/latest)**
 2. Open the image and drag `Ledge` into Applications
 3. macOS will block the first launch — expected, the app is not signed with a paid
    Apple certificate. Allow it once:
@@ -44,6 +44,11 @@ throughout — ImageIO, PDFKit, AVFoundation — so there is nothing to install.
 - **Video.** mov to mp4 by repackaging rather than re-encoding — 477 MB in 2.9
   seconds instead of minutes. Three compression rungs capped at 1920 wide: a
   28-minute screen recording goes from 3.5 GB to 662 MB. Audio out to m4a and mp3.
+- **Formats macOS will not open.** WMV, MKV, FLV, WebM — the system does not
+  read them at all. A minimal LGPL ffmpeg ships inside the bundle (9.9 MB,
+  arm64 + x86_64, built with `--disable-gpl`) and converts them to MP4, M4A and
+  MP3. Run as a separate process rather than linked, which leaves LGPL and MIT
+  nothing to argue about. Still nothing for anyone to install.
 - **MP3.** macOS cannot write it, so LAME ships inside the bundle: 579 KB,
   arm64 + x86_64, loaded with `dlopen`. Dynamically rather than statically, which
   is what keeps LGPL compatible with MIT. Its licence sits beside it.

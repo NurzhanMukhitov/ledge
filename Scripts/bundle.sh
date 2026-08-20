@@ -79,6 +79,20 @@ else
     echo "==> MP3 encoder: Vendor/lame/libmp3lame.dylib отсутствует, пункт mp3 будет скрыт" >&2
 fi
 
+# ffmpeg for the four formats macOS will not open — WMV, MKV, FLV, WebM.
+# A separate process, never linked: ffmpeg here is LGPL and Ledge is MIT, and a
+# process boundary leaves nothing to argue about. Its licence and the recipe that
+# built it travel beside it, which is what the LGPL asks of a redistributor.
+if [ -f "$ROOT/Vendor/ffmpeg/ffmpeg" ]; then
+    echo "==> ffmpeg (LGPL, только недостающие форматы)"
+    cp "$ROOT/Vendor/ffmpeg/ffmpeg" "$APP/Contents/Resources/ffmpeg"
+    chmod +x "$APP/Contents/Resources/ffmpeg"
+    cp "$ROOT/Vendor/ffmpeg/COPYING.LGPLv2.1" "$APP/Contents/Resources/ffmpeg-COPYING.txt" 2>/dev/null || true
+    echo "    $(lipo -archs "$APP/Contents/Resources/ffmpeg") · $(du -h "$APP/Contents/Resources/ffmpeg" | cut -f1)"
+else
+    echo "==> ffmpeg отсутствует: WMV, MKV, FLV и WebM останутся нечитаемыми" >&2
+fi
+
 # Now Playing helper. Built here rather than by SwiftPM because it is not linked
 # into the app: it is loaded into /usr/bin/perl at runtime. See helper.m.
 echo "==> building Now Playing helper"
