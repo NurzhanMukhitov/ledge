@@ -12,10 +12,20 @@ VERSION="$(sed -n 's/^VERSION=//p' "$ROOT/Scripts/version" 2>/dev/null || echo 0
 # ещё в ходу — macOS 15 ставится на них с 2018 года. Библиотеки в бандле уже
 # универсальные, и однобокий исполняемый файл делал бы их вес бессмысленным:
 # на Intel не запустилось бы вообще ничего.
-ARCHS=(--arch arm64 --arch x86_64)
+# Две отдельные сборки и lipo, а не флаг --arch. Флаг переводит SwiftPM на
+# другую систему сборки, и та отказывается от swiftLanguageMode(.v5):
+# «Some of the Swift language versions used in target are supported.
+# (given: [5], supported: [])». Локально с одним тулчейном это проходит, на
+# раннере с другим — нет, и ловится только в CI, то есть после того, как
+# выпущено. По триплетам собирается тем же путём, что и обычная сборка.
 echo "==> swift build -c $CONFIG (arm64 + x86_64)"
-swift build -c "$CONFIG" --package-path "$ROOT" "${ARCHS[@]}"
-BIN="$(swift build -c "$CONFIG" --package-path "$ROOT" "${ARCHS[@]}" --show-bin-path)/Ledge"
+SLICES=()
+for TRIPLE in arm64-apple-macosx x86_64-apple-macosx; do
+    swift build -c "$CONFIG" --package-path "$ROOT" --triple "$TRIPLE"
+    SLICES+=("$(swift build -c "$CONFIG" --package-path "$ROOT" --triple "$TRIPLE" --show-bin-path)/Ledge")
+done
+BIN="$ROOT/.build/Ledge-universal"
+lipo -create "${SLICES[@]}" -output "$BIN"
 
 echo "==> assembling $APP"
 rm -rf "$APP"
