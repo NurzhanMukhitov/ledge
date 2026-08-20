@@ -8,9 +8,14 @@ CONFIG="${1:-release}"
 APP="$ROOT/build/Ledge.app"
 VERSION="$(sed -n 's/^VERSION=//p' "$ROOT/Scripts/version" 2>/dev/null || echo 0.1.0)"
 
-echo "==> swift build -c $CONFIG"
-swift build -c "$CONFIG" --package-path "$ROOT"
-BIN="$(swift build -c "$CONFIG" --package-path "$ROOT" --show-bin-path)/Ledge"
+# Обе архитектуры, а не только своя. Приложение раздаётся, и маки на Intel
+# ещё в ходу — macOS 15 ставится на них с 2018 года. Библиотеки в бандле уже
+# универсальные, и однобокий исполняемый файл делал бы их вес бессмысленным:
+# на Intel не запустилось бы вообще ничего.
+ARCHS=(--arch arm64 --arch x86_64)
+echo "==> swift build -c $CONFIG (arm64 + x86_64)"
+swift build -c "$CONFIG" --package-path "$ROOT" "${ARCHS[@]}"
+BIN="$(swift build -c "$CONFIG" --package-path "$ROOT" "${ARCHS[@]}" --show-bin-path)/Ledge"
 
 echo "==> assembling $APP"
 rm -rf "$APP"
@@ -97,10 +102,27 @@ fi
 # into the app: it is loaded into /usr/bin/perl at runtime. See helper.m.
 echo "==> building Now Playing helper"
 clang -dynamiclib -fobjc-arc -O2 \
+    -arch arm64 -arch x86_64 \
     -mmacosx-version-min=15.0 \
     -framework Foundation \
     -o "$APP/Contents/Resources/libledgemedia.dylib" \
     "$ROOT/Sources/LedgeMediaHelper/helper.m"
+
+# Однобокий файл в универсальном бандле — молчаливая поломка: собралось,
+# подписалось, а на половине машин не запускается. Проверяется здесь, где это
+# ещё стоит одну пересборку.
+echo "==> проверка архитектур"
+for f in "$APP/Contents/MacOS/Ledge" \
+         "$APP/Contents/Resources/libledgemedia.dylib" \
+         "$APP/Contents/Frameworks/libmp3lame.dylib" \
+         "$APP/Contents/Resources/ffmpeg"; do
+    [ -f "$f" ] || continue
+    archs="$(lipo -archs "$f")"
+    case "$archs" in
+        *arm64*x86_64*|*x86_64*arm64*) echo "    $(basename "$f"): $archs" ;;
+        *) echo "!!! $(basename "$f") собран только под $archs" >&2; exit 1 ;;
+    esac
+done
 
 echo "==> ad-hoc signing"
 # Расширенные атрибуты снимаются первыми. iCloud вешает на файлы
