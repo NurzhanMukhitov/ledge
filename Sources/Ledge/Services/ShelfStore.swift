@@ -29,6 +29,14 @@ struct ShelfItem: Identifiable, Equatable {
     /// does not report back, so it shows an ellipsis rather than a number it
     /// would have to invent.
     var progress: Double?
+    /// The work ran and did not produce a file.
+    ///
+    /// Some containers the system lists as readable still hold codecs it cannot
+    /// decode — an AVI is the usual one. Nothing can tell that apart in advance,
+    /// so the honest place to say it is here, after the attempt. The card stays
+    /// until it is dismissed: a card that removed itself would leave the same
+    /// nothing that made this confusing in the first place.
+    var failed = false
     var name: String { url.lastPathComponent }
 
     /// "PNG · 1.2 MB" under the name.
@@ -39,6 +47,7 @@ struct ShelfItem: Identifiable, Equatable {
     /// line from flickering in on every visit to the tab.
     var meta: String {
         let kind = url.pathExtension.uppercased()
+        if failed { return "\(kind) · \(localized("failed"))" }
         if isPending { return progress.map { "\(kind) · \(Int($0 * 100))%" } ?? "\(kind) · …" }
         guard let bytes else { return kind }
         return kind.isEmpty ? Converter.size(bytes) : "\(kind) · \(Converter.size(bytes))"
@@ -171,8 +180,16 @@ final class ShelfStore: ObservableObject {
         persist()
     }
 
-    /// Cancelled or failed. The card goes without a trace: it never named a
-    /// file that existed, so there is nothing to leave behind.
+    /// The work failed. The card stays, marked, until someone dismisses it.
+    func fail(_ id: UUID) {
+        jobs[id] = nil
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].failed = true
+        items[index].progress = nil
+    }
+
+    /// Cancelled. The card goes without a trace: it never named a file that
+    /// existed, so there is nothing to leave behind.
     func abandon(_ id: UUID) {
         jobs[id] = nil
         items.removeAll { $0.id == id }
@@ -317,6 +334,6 @@ final class ShelfStore: ObservableObject {
     /// defaults that resolves to nothing on the next launch — a card that can
     /// never load and can only be removed by hand.
     private func persist() {
-        UserDefaults.standard.set(items.filter { !$0.isPending }.map(\.url.path), forKey: defaultsKey)
+        UserDefaults.standard.set(items.filter { !$0.isPending && !$0.failed }.map(\.url.path), forKey: defaultsKey)
     }
 }

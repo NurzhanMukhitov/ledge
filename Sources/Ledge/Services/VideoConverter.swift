@@ -14,9 +14,51 @@ import UniformTypeIdentifiers
 /// something.
 enum VideoConverter {
 
-    static func isVideo(_ url: URL) -> Bool {
+    /// Whether AVFoundation will open this at all, asked of AVFoundation itself.
+    ///
+    /// `UTType.conforms(to: .movie)` answers a different question — whether the
+    /// file is *a video* — and WMV, MKV, FLV and WebM all are. macOS just cannot
+    /// read any of them. Going by the type meant the menu offered conversions
+    /// that quietly did nothing: the card vanished, no file appeared, and there
+    /// was nothing to explain it.
+    ///
+    /// The list is the system's own and moves with it, so a codec that arrives
+    /// in a future macOS starts working here without a change.
+    private static let readableTypes: Set<String> = Set(
+        AVURLAsset.audiovisualTypes().map(\.rawValue)
+    )
+
+    static func isReadable(_ url: URL) -> Bool {
+        guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+        return readableTypes.contains(type.identifier)
+    }
+
+    /// A file that is a video as far as the system is concerned — whether or not
+    /// anything here can open it. Used to tell "not a video" apart from "a video
+    /// macOS refuses", because those deserve different answers.
+    static func looksLikeVideo(_ url: URL) -> Bool {
         guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
         return type.conforms(to: .movie) || type.conforms(to: .video)
+    }
+
+    static func isVideo(_ url: URL) -> Bool {
+        looksLikeVideo(url) && isReadable(url)
+    }
+
+    /// Sound with no picture: mp3, wav, flac, m4a and the rest. These were
+    /// missing from the menu entirely — the shelf offered nothing for a file
+    /// AVFoundation reads perfectly well.
+    static func isAudio(_ url: URL) -> Bool {
+        guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+        return type.conforms(to: .audio) && isReadable(url)
+    }
+
+    static func isMP3(_ url: URL) -> Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .mp3) ?? false
+    }
+
+    static func isM4A(_ url: URL) -> Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .mpeg4Audio) ?? false
     }
 
     static func isMP4(_ url: URL) -> Bool {

@@ -123,3 +123,7 @@
 "Cancel" = "Cancel";
 "Swap languages" = "Swap languages";
 "%d files" = "%d files";
+"To MP3" = "To MP3";
+"To M4A" = "To M4A";
+"macOS does not open %@" = "macOS does not open %@";
+"failed" = "failed";

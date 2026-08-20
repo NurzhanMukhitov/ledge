@@ -122,3 +122,7 @@
 "Cancel" = "Отменить";
 "Swap languages" = "Поменять языки местами";
 "%d files" = "%d файлов";
+"To MP3" = "В MP3";
+"To M4A" = "В M4A";
+"macOS does not open %@" = "macOS не открывает %@";
+"failed" = "не удалось";

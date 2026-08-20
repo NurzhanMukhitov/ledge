@@ -61,7 +61,9 @@ struct ShelfPane: View {
                                     ) { fraction in
                                         Task { @MainActor in shelf.advance(id, to: fraction) }
                                     }
-                                    done ? shelf.complete(id) : shelf.abandon(id)
+                                    if done { shelf.complete(id) }
+                                    else if Task.isCancelled { shelf.abandon(id) }
+                                    else { shelf.fail(id) }
                                 })
                             }
                         }
@@ -224,7 +226,7 @@ private struct ShelfCard: View {
         // Dimmed, not greyed out: the card is a placeholder for a file that
         // does not exist yet, and it should read as one at a glance across a
         // strip of real ones.
-        .opacity(item.isPending ? 0.45 : 1)
+        .opacity(item.isPending || item.failed ? 0.45 : 1)
         .padding(.horizontal, 6)
         .padding(.vertical, 8)
         .frame(width: 86, height: 102)
@@ -261,7 +263,7 @@ private struct ShelfCard: View {
         // would hand over a path to nothing, and double-clicking would open the
         // same nothing.
         .overlay {
-            if !item.isPending {
+            if !item.isPending, !item.failed {
                 ShelfDragSource(
                     urls: { shelf.dragURLs(startingAt: item) },
                     onClick: { modifiers in shelf.select(item, modifiers: modifiers) },
@@ -291,9 +293,9 @@ private struct ShelfCard: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contextMenu {
-            if item.isPending {
+            if item.isPending || item.failed {
                 // Everything else acts on a file, and there is not one yet.
-                Button("Cancel") { shelf.remove(item) }
+                Button(item.failed ? "Remove from Shelf" : "Cancel") { shelf.remove(item) }
             } else {
             Button("Copy") { shelf.copy(item) }
             Button("Open") { shelf.open(item) }
@@ -322,6 +324,39 @@ private struct ShelfCard: View {
             // the same VideoToolbox encoder ffmpeg would have driven, without
             // asking anyone to install it. MP3 is the one exception, and it is
             // hidden rather than broken when the bundle was built without LAME.
+            // A format the system cannot open gets one line saying so, instead of
+            // a menu full of actions that would silently do nothing.
+            let unreadable = scope.filter { VideoConverter.looksLikeVideo($0) && !VideoConverter.isReadable($0) }
+            if !unreadable.isEmpty, scope.count == unreadable.count {
+                Divider()
+                Button(localized("macOS does not open %@", unreadable[0].pathExtension.uppercased())) {}
+                    .disabled(true)
+            }
+
+            // Sound with no picture. Extraction already works on any asset that
+            // has an audio track, so these needed no new machinery — only a way
+            // into the menu, which they never had.
+            let audios = scope.filter(VideoConverter.isAudio)
+            if !audios.isEmpty {
+                Divider()
+                let toMP3 = audios.filter { !VideoConverter.isMP3($0) }
+                if !toMP3.isEmpty, MP3Encoder.isAvailable {
+                    Button(count(localized("To MP3"), toMP3.count)) {
+                        for url in toMP3 {
+                            run(url, prefix: "MP3", ext: "mp3") { await VideoConverter.extractMP3(url, to: $0) }
+                        }
+                    }
+                }
+                let toM4A = audios.filter { !VideoConverter.isM4A($0) }
+                if !toM4A.isEmpty {
+                    Button(count(localized("To M4A"), toM4A.count)) {
+                        for url in toM4A {
+                            run(url, prefix: "M4A", ext: "m4a") { await VideoConverter.extractM4A(url, to: $0) }
+                        }
+                    }
+                }
+            }
+
             let videos = scope.filter(VideoConverter.isVideo)
             if !videos.isEmpty {
                 Divider()
@@ -398,7 +433,9 @@ private struct ShelfCard: View {
         // report back, so their cards show an ellipsis rather than a number.
         let id = shelf.reserve(out, determinate: false)
         shelf.attach(id, Task {
-            await work(out) ? shelf.complete(id) : shelf.abandon(id)
+            if await work(out) { shelf.complete(id) }
+            else if Task.isCancelled { shelf.abandon(id) }
+            else { shelf.fail(id) }
         })
     }
 }
